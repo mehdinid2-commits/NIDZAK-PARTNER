@@ -117,10 +117,13 @@ export default function App() {
         }
       } else {
         // No Firebase user active: if current view is a protected dashboard, kick them out
-        if (view === 'super_admin' || view === 'business_owner') {
-          handleLogoutLocalOnly('login');
-        } else if (token || role) {
-          handleLogoutLocalOnly('home');
+        const loginMethod = storage.getItem('nidzak_login_method');
+        if (loginMethod !== 'local') {
+          if (view === 'super_admin' || view === 'business_owner') {
+            handleLogoutLocalOnly('login');
+          } else if (token || role) {
+            handleLogoutLocalOnly('home');
+          }
         }
       }
     });
@@ -162,6 +165,7 @@ export default function App() {
     storage.removeItem('nidzak_role');
     storage.removeItem('nidzak_business_id');
     storage.removeItem('nidzak_user_name');
+    storage.removeItem('nidzak_login_method');
 
     setToken(null);
     setRole(null);

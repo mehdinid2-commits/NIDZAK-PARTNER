@@ -70,22 +70,34 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
 
       const data = await response.json();
       if (response.ok) {
+        try {
+          localStorage.setItem('nidzak_login_method', 'firebase');
+        } catch (e) {}
         onLoginSuccess(data.token, data.role, data.user?.business_id || data.business?.id, data.user?.name);
       } else {
         setErrorMsg(data.error || 'Email or password is incorrect');
       }
     } catch (err: any) {
-      console.error('Firebase Auth Sign In Error:', err);
-      const errorCode = err?.code || '';
-      if (
-        errorCode === 'auth/wrong-password' ||
-        errorCode === 'auth/user-not-found' ||
-        errorCode === 'auth/invalid-credential' ||
-        errorCode === 'auth/invalid-email'
-      ) {
+      console.warn('Firebase Auth Sign In failed, attempting local fallback...', err);
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: loginForm.email, password: loginForm.password })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          try {
+            localStorage.setItem('nidzak_login_method', 'local');
+          } catch (e) {}
+          onLoginSuccess(data.token, data.role, data.user?.business_id || data.business?.id, data.user?.name);
+          return;
+        } else {
+          setErrorMsg(data.error || 'Email or password is incorrect');
+        }
+      } catch (localErr) {
+        console.error('Local fallback login failed:', localErr);
         setErrorMsg('Email or password is incorrect');
-      } else {
-        setErrorMsg('Something went wrong. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -127,12 +139,37 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
         setErrorMsg(data.error || 'Something went wrong. Please try again.');
       }
     } catch (err: any) {
-      setIsSigningUp(false);
-      console.error('Firebase Auth Sign Up Error:', err);
-      const errorCode = err?.code || '';
-      if (errorCode === 'auth/email-already-in-use') {
-        setErrorMsg('User already exists. Please sign in');
-      } else {
+      console.warn('Firebase Sign Up failed, trying local fallback...', err);
+      try {
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(registerForm)
+        });
+        const data = await response.json();
+        if (response.ok) {
+          try {
+            localStorage.setItem('nidzak_login_method', 'local');
+          } catch (e) {}
+          setIsSigningUp(false);
+          const loginRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: registerForm.email, password: registerForm.password })
+          });
+          const loginData = await loginRes.json();
+          if (loginRes.ok) {
+            onLoginSuccess(loginData.token, loginData.role, loginData.user?.business_id || loginData.business?.id, loginData.user?.name);
+          } else {
+            setView('login');
+          }
+          return;
+        } else {
+          setIsSigningUp(false);
+          setErrorMsg(data.error || 'Something went wrong. Please try again.');
+        }
+      } catch (localErr) {
+        setIsSigningUp(false);
         setErrorMsg('Something went wrong. Please try again.');
       }
     } finally {
