@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "SystemTable": {
+      "title": "SystemTable",
+      "description": "Serialized copy of system-level business application database tables",
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "object",
+          "description": "The full application in-memory state mapped by table keys"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when this database state document was last updated"
+        }
+      },
+      "required": ["state", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/system_tables/{tableId}": {
+      "schema": "SystemTable",
+      "description": "Sync tables containing the structured SaaS relational databases"
+    }
+  }
+}

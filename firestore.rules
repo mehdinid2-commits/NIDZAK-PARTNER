@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global catch-all default deny to enforce strict zero-trust by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // System tables metadata collection for secure full-system backend synchronization
+    match /system_tables/{tableId} {
+      // Allow read/write access ONLY if logged in specifically as the backend sync service identity
+      allow read, write: if request.auth != null && request.auth.token.email == 'system-database-sync@nidzak.com';
+    }
+
+    // Standard client-side users path (matches your existing rules)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /{allPaths=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

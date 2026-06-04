@@ -8,7 +8,7 @@ import express from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { loadDatabase, saveDatabase } from './src/lib/db';
+import { loadDatabase, saveDatabase, initializeFirebaseSync } from './src/lib/db';
 import { User, Business, Subscription, Service, Staff, Client, Appointment, UserRoleName } from './src/types';
 
 const app = express();
@@ -1635,6 +1635,9 @@ app.post('/api/public/business/:slug/book', (req, res) => {
 // ----------------------------------------------------
 
 async function startServer() {
+  // Setup database sync with Firebase Firestore
+  await initializeFirebaseSync();
+
   // Vite integration middleware in local sandbox development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

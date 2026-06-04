@@ -70,6 +70,93 @@ let dbState: DatabaseState;
 
 const DB_FILE_PATH = path.join(process.cwd(), 'database', 'db_store.json');
 
+// Firebase sync engine integration
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAQXgAUXErYTRR_BSj1NmLTZvyBX1X5IbY",
+  authDomain: "nidzak-partner.firebaseapp.com",
+  projectId: "nidzak-partner",
+  storageBucket: "nidzak-partner.firebasestorage.app",
+  messagingSenderId: "1070302310289",
+  appId: "1:1070302310289:web:b9c22679338aafb1faf430"
+};
+
+let syncEnabled = false;
+let fDb: any = null;
+
+export async function initializeFirebaseSync() {
+  console.log('[FIREBASE-SYNC] Initializing Firebase sync...');
+  try {
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    fDb = getFirestore(app);
+
+    const email = 'system-database-sync@nidzak.com';
+    const password = 'system_sync_secure_pass_2026';
+
+    console.log('[FIREBASE-SYNC] Authenticating database sync engine...');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log('[FIREBASE-SYNC] Authenticated successfully as', email);
+    } catch (signinErr: any) {
+      if (
+        signinErr.code === 'auth/user-not-found' || 
+        signinErr.code === 'auth/invalid-credential' || 
+        String(signinErr.message || '').includes('user-not-found') ||
+        String(signinErr.message || '').includes('invalid-credential')
+      ) {
+        console.log('[FIREBASE-SYNC] Sync user not found, self-registering system-database-sync...');
+        try {
+          await createUserWithEmailAndPassword(auth, email, password);
+          console.log('[FIREBASE-SYNC] Successfully self-registered sync account!');
+        } catch (signupErr) {
+          console.error('[FIREBASE-SYNC] Failed self-registration:', signupErr);
+          throw signupErr;
+        }
+      } else {
+        throw signinErr;
+      }
+    }
+
+    syncEnabled = true;
+
+    // Load state from Firestore
+    console.log('[FIREBASE-SYNC] Downloading database snapshot from Firestore...');
+    const docRef = doc(fDb, 'system_tables', 'nidzak_database_state');
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const remoteData = docSnap.data();
+      if (remoteData && remoteData.state) {
+        console.log('[FIREBASE-SYNC] Snapshot found. Overwriting local state with Firestore state.');
+        dbState = remoteData.state;
+        // Verify key integrity
+        if (!dbState.products) dbState.products = [];
+        if (!dbState.promotions) dbState.promotions = [];
+        if (!dbState.gift_cards) dbState.gift_cards = [];
+        // Save local backup file
+        try {
+          fs.writeFileSync(DB_FILE_PATH, JSON.stringify(dbState, null, 2), 'utf-8');
+        } catch (e) {}
+      }
+    } else {
+      console.log('[FIREBASE-SYNC] No remote snapshot found. Uploading seeds as primary master...');
+      // Initialize local state
+      loadDatabase();
+      // Write seeds to Firestore
+      await setDoc(docRef, { state: dbState, updatedAt: new Date().toISOString() });
+      console.log('[FIREBASE-SYNC] Initial seeds successfully pushed to Firestore!');
+    }
+  } catch (err) {
+    console.error('[FIREBASE-SYNC] FAILED to setup sync. Falling back to local offline mode:', err);
+    // Ensure we still load local database on failure
+    loadDatabase();
+  }
+}
+
 // Ensure database directory exists
 try {
   const dir = path.dirname(DB_FILE_PATH);
@@ -85,6 +172,21 @@ export function saveDatabase() {
     fs.writeFileSync(DB_FILE_PATH, JSON.stringify(dbState, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving database to file, using memory only:', err);
+  }
+
+  if (syncEnabled && fDb) {
+    try {
+      const docRef = doc(fDb, 'system_tables', 'nidzak_database_state');
+      setDoc(docRef, { state: dbState, updatedAt: new Date().toISOString() })
+        .then(() => {
+          console.log('[FIREBASE-SYNC] Remote Firestore synchronized successfully.');
+        })
+        .catch((e) => {
+          console.error('[FIREBASE-SYNC] Failed to synchronize to Firestore:', e);
+        });
+    } catch (firebaseErr) {
+      console.error('[FIREBASE-SYNC] Error initiating Firestore sync:', firebaseErr);
+    }
   }
 }
 
