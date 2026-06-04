@@ -43,7 +43,9 @@ import {
   Printer,
   Download,
   CheckCircle2,
-  Calculator
+  Calculator,
+  Package,
+  Tag
 } from 'lucide-react';
 import { Business, Service, Staff, Client, Appointment, SubscriptionPlan, Subscription, Invoice, Payment, WorkingHour } from '../types';
 
@@ -55,7 +57,7 @@ interface BusinessDashboardProps {
 }
 
 export default function BusinessDashboard({ businessId, token, onLogout, ownerName }: BusinessDashboardProps) {
-  const [activePane, setActivePane] = useState<'dashboard' | 'calendar' | 'appointments' | 'clients' | 'services' | 'staff' | 'branches' | 'billing' | 'settings' | 'reports' | 'gift_cards'>('dashboard');
+  const [activePane, setActivePane] = useState<'dashboard' | 'calendar' | 'appointments' | 'clients' | 'services' | 'staff' | 'branches' | 'billing' | 'settings' | 'reports' | 'gift_cards' | 'products' | 'promotions'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -71,6 +73,16 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
   const [sub, setSub] = useState<Subscription | null>(null);
   const [plan, setPlan] = useState<SubscriptionPlan | null>(null);
 
+  // Products & Promotions System
+  const [products, setProducts] = useState<any[]>([]);
+  const [promotions, setPromotions] = useState<any[]>([]);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [productForm, setProductForm] = useState({ name: '', sku: '', price: '', cost_price: '', stock: '10', category: '', supplier: '' });
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [editProductForm, setEditProductForm] = useState({ name: '', sku: '', price: '', cost_price: '', stock: '10', category: '', supplier: '' });
+  const [showAddPromotion, setShowAddPromotion] = useState(false);
+  const [promotionForm, setPromotionForm] = useState({ name: '', code: '', discount_type: 'percent', discount_value: '10', status: 'active', expires_at: '' });
+
   // Gift Card systems
   const [giftCards, setGiftCards] = useState<any[]>([]);
   const [showAddGiftCard, setShowAddGiftCard] = useState(false);
@@ -79,7 +91,7 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
   // Order checkout flow
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutAppt, setCheckoutAppt] = useState<any | null>(null);
-  const [checkoutForm, setCheckoutForm] = useState({ payment_method: 'cash', gift_card_code: '' });
+  const [checkoutForm, setCheckoutForm] = useState({ payment_method: 'cash', gift_card_code: '', product_id: '', promotion_code: '' });
   const [generatedTicket, setGeneratedTicket] = useState<any | null>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
 
@@ -299,7 +311,7 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       const headers = { 'Authorization': `Bearer ${token}` };
 
       // Standard multi-tenant isolated api routes fetch
-      const [resStats, resAppts, resServices, resStaff, resClients, resBranches, resBilling, resGiftCards] = await Promise.all([
+      const [resStats, resAppts, resServices, resStaff, resClients, resBranches, resBilling, resGiftCards, resProducts, resPromotions] = await Promise.all([
         fetch(`/api/business/${businessId}/stats`, { headers }),
         fetch(`/api/business/${businessId}/appointments`, { headers }),
         fetch(`/api/business/${businessId}/services`, { headers }),
@@ -308,6 +320,8 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
         fetch(`/api/business/${businessId}/branches`, { headers }),
         fetch(`/api/business/${businessId}/billing`, { headers }),
         fetch(`/api/business/${businessId}/gift-cards`, { headers }),
+        fetch(`/api/business/${businessId}/products`, { headers }),
+        fetch(`/api/business/${businessId}/promotions`, { headers }),
       ]);
 
       if (resStats.ok) {
@@ -335,6 +349,8 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       if (resClients.ok) setClients(await resClients.json());
       if (resBranches.ok) setBranches(await resBranches.json());
       if (resGiftCards.ok) setGiftCards(await resGiftCards.json());
+      if (resProducts.ok) setProducts(await resProducts.json());
+      if (resPromotions.ok) setPromotions(await resPromotions.json());
       
       if (resBilling.ok) {
         const billingData = await resBilling.json();
@@ -472,6 +488,132 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       } else {
         const err = await response.json();
         alert(err.error || 'Erreur lors de la création du bon cadeau.');
+      }
+    } catch (err) {
+      alert('Erreur réseau.');
+    }
+  };
+
+  // Product Creation Handler
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`/api/business/${businessId}/products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(productForm)
+      });
+
+      if (response.ok) {
+        setShowAddProduct(false);
+        setProductForm({ name: '', sku: '', price: '', cost_price: '', stock: '10', category: '', supplier: '' });
+        fetchTenantDataset();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Erreur lors de la création du produit.');
+      }
+    } catch (err) {
+      alert('Erreur réseau.');
+    }
+  };
+
+  // Product Deletion Handler
+  const handleDeleteProduct = async (id: number) => {
+    if (!confirm('Voulez-vous vraiment supprimer ce produit de l\'inventaire ?')) return;
+    try {
+      const response = await fetch(`/api/business/${businessId}/products/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        fetchTenantDataset();
+      } else {
+        alert('Erreur lors de la suppression.');
+      }
+    } catch (err) {
+      alert('Erreur réseau.');
+    }
+  };
+
+  const handleEditProductSelect = (p: any) => {
+    setEditingProduct(p);
+    setEditProductForm({
+      name: p.name,
+      sku: p.sku || '',
+      price: String(p.price),
+      cost_price: String(p.cost_price || 0),
+      stock: String(p.stock || 0),
+      category: p.category || '',
+      supplier: p.supplier || ''
+    });
+  };
+
+  const handleUpdateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    try {
+      const response = await fetch(`/api/business/${businessId}/products/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(editProductForm)
+      });
+
+      if (response.ok) {
+        setEditingProduct(null);
+        fetchTenantDataset();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Erreur lors de la mise à jour du produit.');
+      }
+    } catch (err) {
+      alert('Erreur réseau.');
+    }
+  };
+
+  // Promotion Creation Handler
+  const handleCreatePromotion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`/api/business/${businessId}/promotions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(promotionForm)
+      });
+
+      if (response.ok) {
+        setShowAddPromotion(false);
+        setPromotionForm({ name: '', code: '', discount_type: 'percent', discount_value: '10', status: 'active', expires_at: '' });
+        fetchTenantDataset();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Erreur d\'enregistrement de la promotion.');
+      }
+    } catch (err) {
+      alert('Erreur réseau.');
+    }
+  };
+
+  // Promotion Deletion Handler
+  const handleDeletePromotion = async (id: number) => {
+    if (!confirm('Voulez-vous vraiment désactiver/supprimer cette offre promotionnelle ?')) return;
+    try {
+      const response = await fetch(`/api/business/${businessId}/promotions/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        fetchTenantDataset();
+      } else {
+        alert('Erreur lors de la suppression.');
       }
     } catch (err) {
       alert('Erreur réseau.');
@@ -745,6 +887,22 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
             </button>
 
             <button
+              onClick={() => { setActivePane('products'); setQuery(''); }}
+              className={`w-full text-left px-3.5 py-3 rounded-lg flex items-center gap-3 transition-colors ${activePane === 'products' ? 'bg-indigo-500/10 text-indigo-455 font-bold border-l-4 border-indigo-500 text-indigo-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Package className="w-4.5 h-4.5 text-inherit" />
+              Produits & Stock
+            </button>
+
+            <button
+              onClick={() => { setActivePane('promotions'); setQuery(''); }}
+              className={`w-full text-left px-3.5 py-3 rounded-lg flex items-center gap-3 transition-colors ${activePane === 'promotions' ? 'bg-indigo-500/10 text-indigo-455 font-bold border-l-4 border-indigo-500 text-indigo-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Tag className="w-4.5 h-4.5 text-inherit" />
+              Marketing & Codes
+            </button>
+
+            <button
               onClick={() => { setActivePane('billing'); setQuery(''); }}
               className={`w-full text-left px-3.5 py-3 rounded-lg flex items-center gap-3 transition-colors ${activePane === 'billing' ? 'bg-indigo-500/10 text-indigo-455 font-bold border-l-4 border-indigo-500 text-indigo-400' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
             >
@@ -816,6 +974,29 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                 label = "Nouveau Collaborateur";
                 icon = <Plus className="w-4.5 h-4.5" />;
                 action = () => setShowAddStaff(true);
+              } else if (activePane === 'products') {
+                label = "Ajouter un Produit";
+                icon = <Plus className="w-4.5 h-4.5" />;
+                action = () => {
+                  const randSku = 'PROD-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                  setProductForm({ name: '', sku: randSku, price: '120', cost_price: '50', stock: '20', category: 'Soins', supplier: '' });
+                  setShowAddProduct(true);
+                };
+              } else if (activePane === 'promotions') {
+                label = "Nouvelle Promotion";
+                icon = <Plus className="w-4.5 h-4.5" />;
+                action = () => {
+                  setPromotionForm({ name: '', code: 'PROMO' + Math.floor(10 + Math.random() * 90), discount_type: 'percent', discount_value: '20', status: 'active', expires_at: '' });
+                  setShowAddPromotion(true);
+                };
+              } else if (activePane === 'gift_cards') {
+                label = "Créer un Bon Cadeau";
+                icon = <Plus className="w-4.5 h-4.5" />;
+                action = () => {
+                  const randomCode = 'GIF-' + Math.floor(100 + Math.random() * 900) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                  setGiftCardForm({ code: randomCode, initial_amount: '200', client_name: '', client_phone: '', expires_at: '' });
+                  setShowAddGiftCard(true);
+                };
               } else if (activePane === 'settings') {
                 label = "Enregistrer Réglages";
                 icon = <Save className="w-4.5 h-4.5" />;
@@ -875,6 +1056,71 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                     <p className="text-[10px] text-slate-500">Praticiens actifs</p>
                   </div>
 
+                </div>
+
+                {/* 🚀 QUICK SHORTCUTS REGISTRY */}
+                <div className="bg-gradient-to-r from-indigo-50/50 via-slate-50 to-indigo-50/20 border border-slate-150 rounded-2xl p-6 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-indigo-600 animate-pulse" />
+                    <div>
+                      <h3 className="text-xs font-black text-indigo-950 uppercase tracking-widest font-mono">Actions Rapides de Commerce</h3>
+                      <p className="text-[10px] text-slate-500 font-sans mt-0.5">Accédez instantanément aux leviers de ventes additionnelles et de fidélisation de votre salon</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    <button
+                      onClick={() => {
+                        const randomCode = 'GIF-' + Math.floor(100 + Math.random() * 900) + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                        setGiftCardForm({ code: randomCode, initial_amount: '200', client_name: '', client_phone: '', expires_at: '' });
+                        setShowAddGiftCard(true);
+                      }}
+                      className="bg-white hover:bg-slate-50 border border-slate-150 p-5 rounded-2xl flex items-start gap-4 text-left transition-all hover:scale-[1.01] hover:border-indigo-200 hover:shadow-md cursor-pointer group"
+                    >
+                      <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600 shrink-0 group-hover:bg-indigo-100 transition-colors">
+                        <Gift className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">Émettre un Bon Cadeau</h4>
+                        <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">Créer un chèque cadeau prépayé (ex. pour un anniversaire ou cadeau spécial client).</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const randSku = 'PROD-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                        setProductForm({ name: '', sku: randSku, price: '120', cost_price: '50', stock: '20', category: 'Soins', supplier: '' });
+                        setShowAddProduct(true);
+                      }}
+                      className="bg-white hover:bg-slate-50 border border-slate-150 p-5 rounded-2xl flex items-start gap-4 text-left transition-all hover:scale-[1.01] hover:border-amber-200 hover:shadow-md cursor-pointer group"
+                    >
+                      <div className="p-3 bg-amber-50 rounded-xl text-amber-700 shrink-0 group-hover:bg-amber-100 transition-colors">
+                        <Package className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-amber-800 transition-colors">Ajouter un Produit Retail</h4>
+                        <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">Enregistrer un shampoing, sérum ou accessoire capillaire pour ventes en caisse.</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setPromotionForm({ name: '', code: 'PROMO' + Math.floor(10 + Math.random() * 90), discount_type: 'percent', discount_value: '20', status: 'active', expires_at: '' });
+                        setShowAddPromotion(true);
+                      }}
+                      className="bg-white hover:bg-slate-50 border border-slate-150 p-5 rounded-2xl flex items-start gap-4 text-left transition-all hover:scale-[1.01] hover:border-emerald-200 hover:shadow-md cursor-pointer group"
+                    >
+                      <div className="p-3 bg-emerald-50 rounded-xl text-emerald-700 shrink-0 group-hover:bg-emerald-100 transition-colors">
+                        <Tag className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-emerald-700 transition-colors">Lancer une Promotion</h4>
+                        <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">Générer un code coupon de réduction (20% ou montant fixe) valide lors de l'encaissement.</p>
+                      </div>
+                    </button>
+
+                  </div>
                 </div>
 
                 {/* GRAPH SECTION AND ANALYTICS */}
@@ -976,7 +1222,7 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                         </div>
                         <div className="pt-2 border-t border-slate-150 flex justify-between items-center text-xs">
                           <span className="text-slate-500">CA Associé:</span>
-                          <span className="font-bold text-slate-900">{st.revenue.toFixed(2)} DH</span>
+                          <span className="font-bold text-slate-900">{(st.revenue || 0).toFixed(2)} DH</span>
                         </div>
                       </div>
                     ))}
@@ -1085,6 +1331,7 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                                     // Find any appointment active during this slot's interval
                                     const activeAppt = calendarAppointments.find(appt => {
                                       if (appt.staff_id !== member.id) return false;
+                                      if (!appt.start_time || !appt.end_time) return false;
                                       const [sth, stm] = appt.start_time.split(':').map(Number);
                                       const [eth, etm] = appt.end_time.split(':').map(Number);
                                       const startMins = sth * 60 + stm;
@@ -1926,7 +2173,7 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {giftCards.map((g) => {
-                          const spendPct = ((g.initial_amount - g.remaining_amount) / g.initial_amount) * 105;
+                          const spendPct = g.initial_amount > 0 ? (((g.initial_amount - g.remaining_amount) / g.initial_amount) * 100) : 0;
                           const isUsed = g.status === 'used';
                           return (
                             <tr key={g.id} className="hover:bg-slate-55/70">
@@ -1974,6 +2221,276 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                         {giftCards.length === 0 && (
                           <tr>
                             <td colSpan={7} className="p-8 text-center text-slate-400 italic">Aucun chèque-cadeau enregistré dans le salon de beauté.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ------------------------------------------------ */}
+            {/* 8b. PRODUCTS & INVENTORY PANE */}
+            {/* ------------------------------------------------ */}
+            {activePane === 'products' && (
+              <div className="space-y-6 font-sans">
+                
+                {/* Header row */}
+                <div className="flex justify-between items-center bg-white border border-slate-150 p-6 rounded-2xl shadow-sm">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold tracking-wider text-indigo-650 uppercase">Gestion des stocks</span>
+                    <h3 className="text-xl font-black text-slate-900">Catalogue Produits & Inventaire</h3>
+                    <p className="text-xs text-slate-500 mt-1">Gérez le catalogue des produits de vente retail de votre salon de coiffure / esthétique</p>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      const randSku = 'PROD-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+                      setProductForm({ name: '', sku: randSku, price: '120', cost_price: '50', stock: '20', category: 'Soins', supplier: '' });
+                      setShowAddProduct(true);
+                    }}
+                    className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Ajouter un Produit
+                  </button>
+                </div>
+
+                {/* Stock metrics dashboard cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Références Uniques</span>
+                    <p className="text-2xl font-black text-slate-900">{products.length}</p>
+                    <p className="text-[11.5px] text-slate-500">Produits différents enregistrés</p>
+                  </div>
+
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Stock Total en Unités</span>
+                    <p className="text-2xl font-black text-indigo-700">
+                      {products.reduce((sum, p) => sum + Number(p.stock || 0), 0)}
+                    </p>
+                    <p className="text-[11.5px] text-slate-550 font-bold text-indigo-500">Pièces en stock</p>
+                  </div>
+
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Alertes Stock Critique</span>
+                    <p className="text-2xl font-black text-amber-600">
+                      {products.filter(p => Number(p.stock || 0) <= 5).length}
+                    </p>
+                    <p className="text-[11.5px] text-slate-500">Alerte rupture (stock ≤ 5 pièces)</p>
+                  </div>
+
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Valeur Assets Stock (Vente)</span>
+                    <p className="text-2xl font-black text-emerald-700">
+                      {products.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.stock || 0)), 0).toLocaleString()} DH
+                    </p>
+                    <p className="text-[11.5px] text-slate-550 font-semibold text-emerald-600">
+                      Bénéfice latent estimé: {products.reduce((sum, p) => sum + ((Number(p.price) - Number(p.cost_price)) * Number(p.stock)), 0).toLocaleString()} DH
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* List Table of products */}
+                <div className="bg-white border border-slate-150 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-slate-150 flex justify-between items-center">
+                    <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Inventaire & Valorisation des produits retail</h4>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left font-medium">
+                      <thead className="bg-slate-50 text-[10px] font-bold text-slate-550 uppercase tracking-widest border-b">
+                        <tr>
+                          <th className="p-4">SKU / CODE</th>
+                          <th className="p-4">NOM DU PRODUIT</th>
+                          <th className="p-4">CATÉGORIE</th>
+                          <th className="p-4">PRIX ACHAT / VENTE</th>
+                          <th className="p-4">MARGE %</th>
+                          <th className="p-4">STOCK DISPONIBLE</th>
+                          <th className="p-4 text-right">ACTIONS</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {products.map((p) => {
+                          const margin = p.price > 0 ? ((p.price - p.cost_price) / p.price * 100) : 0;
+                          const critStock = p.stock <= 5;
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-55/70">
+                              <td className="p-4 font-mono font-bold text-slate-550">{p.sku}</td>
+                              <td className="p-4">
+                                <span className="font-extrabold text-slate-900">{p.name}</span>
+                                {p.supplier && <span className="block text-[10px] text-slate-400">Fournisseur : {p.supplier}</span>}
+                              </td>
+                              <td className="p-4">
+                                <span className="px-2 py-1 bg-slate-100 text-slate-650 rounded-lg font-bold border border-slate-200">
+                                  {p.category || 'Général'}
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                <div className="space-y-0.5">
+                                  <p className="font-black text-slate-900">{p.price} DH <span className="text-[10px] font-medium text-slate-405">Public</span></p>
+                                  <p className="text-[10px] text-slate-450 font-semibold">{p.cost_price || 0} DH <span className="font-medium text-slate-450">Coût</span></p>
+                                </div>
+                              </td>
+                              <td className="p-4 text-emerald-600 font-bold uppercase text-[10.5px]">
+                                {margin.toFixed(0)}% Marge
+                              </td>
+                              <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-sm font-black ${critStock ? 'text-amber-600' : 'text-slate-800'}`}>
+                                    {p.stock} pcs
+                                  </span>
+                                  {critStock && (
+                                    <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-extrabold uppercase">STOCK FAIBLE</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditProductSelect(p)}
+                                    className="p-1 px-2.5 hover:bg-indigo-50 hover:text-indigo-650 border border-transparent hover:border-indigo-200 text-indigo-500 rounded-lg font-bold text-[10px] uppercase transition-all"
+                                  >
+                                    Modifier
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProduct(p.id)}
+                                    className="p-1 px-2.5 hover:bg-rose-50 hover:text-rose-600 border border-transparent hover:border-rose-200 text-slate-400 rounded-lg font-bold text-[10px] uppercase transition-all"
+                                  >
+                                    Retirer
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {products.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">Aucun produit en stock. Cliquez sur "Ajouter un produit" pour alimenter votre inventaire.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ------------------------------------------------ */}
+            {/* 8c. PROMOTIONS & MARKETING PANE */}
+            {/* ------------------------------------------------ */}
+            {activePane === 'promotions' && (
+              <div className="space-y-6 font-sans">
+                
+                {/* Header row */}
+                <div className="flex justify-between items-center bg-white border border-slate-150 p-6 rounded-2xl shadow-sm">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold tracking-wider text-indigo-650 uppercase">Marketing & Fidélisation</span>
+                    <h3 className="text-xl font-black text-slate-900">Codes de Réduction & Promotions</h3>
+                    <p className="text-xs text-slate-500 mt-1">Créez des offres attractives et des coupons de rabais pour inciter les réservations dans votre salon de beauté</p>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      setShowAddPromotion(true);
+                    }}
+                    className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Créer un Code Promo
+                  </button>
+                </div>
+
+                {/* Dashboard stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Campagnes Enregistrées</span>
+                    <p className="text-2xl font-black text-slate-900">{promotions.length}</p>
+                    <p className="text-[11.5px] text-slate-500">Total d'offres promotionnelles</p>
+                  </div>
+
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Offres actives</span>
+                    <p className="text-2xl font-black text-emerald-600">
+                      {promotions.filter(p => p.status === 'active').length}
+                    </p>
+                    <p className="text-[11.5px] text-slate-555">Coupons de réduction applicables actuellement</p>
+                  </div>
+
+                  <div className="p-5 bg-white border border-slate-150 rounded-2xl shadow-sm space-y-1">
+                    <span className="text-[10px] font-mono text-slate-450 uppercase font-bold tracking-wide">Performance & Click-through</span>
+                    <p className="text-2xl font-black text-indigo-700 font-sans">Salon-First</p>
+                    <p className="text-[11.5px] text-slate-500">Applicable en direct lors de la caisse</p>
+                  </div>
+
+                </div>
+
+                {/* Promotions Table List */}
+                <div className="bg-white border border-slate-150 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-slate-150">
+                    <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Catalogue des bons et remises fidélité</h4>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left font-medium">
+                      <thead className="bg-slate-50 text-[10px] font-bold text-slate-550 uppercase tracking-widest border-b">
+                        <tr>
+                          <th className="p-4">CODE PROMO</th>
+                          <th className="p-4">NOM DE L'OFFRE / CAMPAGNE</th>
+                          <th className="p-4">VALEUR DE LA REMISE</th>
+                          <th className="p-4">DATE DE DÉBUT</th>
+                          <th className="p-4">EXPIRATION</th>
+                          <th className="p-4 flex items-center gap-1">STATUT BADGE</th>
+                          <th className="p-4 text-right">ACTIONS</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {promotions.map((p) => {
+                          const isPercent = p.discount_type === 'percent';
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-55/70">
+                              <td className="p-4">
+                                <span className="bg-indigo-50 border border-indigo-150 px-3 py-1.5 rounded-lg font-mono font-bold text-indigo-700 shadow-sm inline-block select-all">
+                                  {p.code}
+                                </span>
+                              </td>
+                              <td className="p-4 font-extrabold text-slate-900">{p.name}</td>
+                              <td className="p-4">
+                                <span className="text-sm font-black text-slate-950 block">
+                                  {isPercent ? `${p.discount_value}%` : `${p.discount_value} DH`}
+                                </span>
+                                <span className="text-[9px] text-slate-450 tracking-wider font-bold uppercase">de réduction</span>
+                              </td>
+                              <td className="p-4 text-slate-500 font-mono text-[10.5px]">{p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Immediat'}</td>
+                              <td className="p-4 text-slate-500 font-mono text-[10.5px]">{p.expires_at ? new Date(p.expires_at).toLocaleDateString() : 'Sans date limite'}</td>
+                              <td className="p-4">
+                                <span className="inline-block px-2.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl uppercase text-[10px] tracking-wider font-extrabold">
+                                  Actif
+                                </span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePromotion(p.id)}
+                                  className="p-1 px-2.5 hover:bg-rose-50 hover:text-rose-600 border border-transparent hover:border-rose-200 text-slate-400 rounded-lg font-bold text-[10px] uppercase transition-all"
+                                >
+                                  Retirer
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {promotions.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">Aucune promotion en cours. Cliquez sur "Créer un Code Promo".</td>
                           </tr>
                         )}
                       </tbody>
@@ -2735,82 +3252,144 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       {/* ------------------------------------------------ */}
       {/* CHECKOUT MODAL SYSTEM */}
       {/* ------------------------------------------------ */}
-      {showCheckout && checkoutAppt && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 font-sans">
-            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                <Calculator className="w-5 h-5 text-indigo-600" />
-                Système d'Encaissement Caisse
-              </h3>
-              <button onClick={() => { setShowCheckout(false); setCheckoutAppt(null); }} className="text-slate-400 hover:text-slate-750 font-extrabold text-sm">X</button>
-            </div>
-            
-            <div className="bg-indigo-50/70 p-4 rounded-xl border border-indigo-100 text-xs text-indigo-950 space-y-2">
-              <div className="flex justify-between">
-                <span className="font-bold">Client :</span>
-                <span className="font-extrabold text-slate-900">{checkoutAppt.client_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-bold">Prestation :</span>
-                <span className="text-slate-650 font-semibold">{checkoutAppt.service_name} ({services.find(s => s.id === checkoutAppt.service_id)?.price || checkoutAppt.total_price} DH)</span>
-              </div>
-              <div className="flex justify-between border-t border-indigo-200/50 pt-2 text-sm">
-                <span className="font-black text-slate-900">Total Net à payer :</span>
-                <span className="font-black text-indigo-900">{checkoutAppt.total_price} DH</span>
-              </div>
-            </div>
+      {showCheckout && checkoutAppt && (() => {
+        const selectedPromo = promotions.find(p => p.code === checkoutForm.promotion_code);
+        const selectedProd = products.find(p => p.id === parseInt(checkoutForm.product_id));
+        const apptBasePrice = services.find(s => s.id === checkoutAppt.service_id)?.price || checkoutAppt.total_price || 0;
+        
+        let promoDiscount = 0;
+        if (selectedPromo) {
+          if (selectedPromo.discount_type === 'percent') {
+            promoDiscount = Number((apptBasePrice * (selectedPromo.discount_value / 100)).toFixed(2));
+          } else {
+            promoDiscount = selectedPromo.discount_value;
+          }
+        }
+        const retailProductPrice = selectedProd ? selectedProd.price : 0;
+        const computedNetTotal = Math.max(0, apptBasePrice - promoDiscount) + retailProductPrice;
 
-            <form onSubmit={handleCheckoutConfirm} className="space-y-4 text-xs font-medium">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase font-sans">Moyen de règlement</label>
-                <select
-                  value={checkoutForm.payment_method}
-                  onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 mt-1 p-2.5 text-xs rounded-xl focus:bg-white outline-none font-bold text-slate-800"
-                >
-                  <option value="cash">🔑 Espèces (Direct Cash)</option>
-                  <option value="stripe">💳 Carte Bancaire (Lecteur / TPE)</option>
-                  <option value="transfer">🏦 Virement Bancaire</option>
-                  <option value="gift_card">🎁 Valider avec un Bon Cadeau</option>
-                </select>
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 font-sans">
+              <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                  <Calculator className="w-5 h-5 text-indigo-600" />
+                  Système d'Encaissement Caisse
+                </h3>
+                <button onClick={() => { setShowCheckout(false); setCheckoutAppt(null); }} className="text-slate-400 hover:text-slate-750 font-extrabold text-sm">X</button>
               </div>
-
-              {checkoutForm.payment_method === 'gift_card' && (
-                <div className="p-3.5 bg-indigo-50/50 rounded-xl border border-indigo-150 space-y-2">
-                  <label className="text-[10px] font-bold text-indigo-700 uppercase">Saisir le Code unique du Bon Cadeau</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: GIF-384-HKA8"
-                    value={checkoutForm.gift_card_code}
-                    onChange={(e) => setCheckoutForm({ ...checkoutForm, gift_card_code: e.target.value })}
-                    className="w-full bg-white border border-indigo-200 px-3 py-2 text-xs rounded-lg outline-none font-mono font-bold text-center tracking-widest text-indigo-900 uppercase"
-                  />
-                  <p className="text-[10px] text-indigo-650/80 italic">La valeur du bon cadeau sera débitée du montant total. Si le solde est insuffisant, le reste sera géré.</p>
+              
+              <div className="bg-indigo-50/70 p-4 rounded-xl border border-indigo-100 text-xs text-indigo-950 space-y-2">
+                <div className="flex justify-between">
+                  <span className="font-bold">Client :</span>
+                  <span className="font-extrabold text-slate-900">{checkoutAppt.client_name}</span>
                 </div>
-              )}
+                <div className="flex justify-between">
+                  <span className="font-bold">Service de base :</span>
+                  <span className="text-slate-650 font-semibold">{checkoutAppt.service_name} ({apptBasePrice} DH)</span>
+                </div>
+                
+                {promoDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-bold">
+                    <span>Remise Coupon ({selectedPromo?.code}) :</span>
+                    <span>-{promoDiscount} DH</span>
+                  </div>
+                )}
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => { setShowCheckout(false); setCheckoutAppt(null); }}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 hover:bg-emerald-700 bg-emerald-600 text-white rounded-xl font-bold shadow-md flex items-center gap-1"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Valider & Clôturer Ticket
-                </button>
+                {retailProductPrice > 0 && (
+                  <div className="flex justify-between text-indigo-700 font-bold">
+                    <span>Produit retail ({selectedProd?.name}) :</span>
+                    <span>+{retailProductPrice} DH</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between border-t border-indigo-200/50 pt-2 text-sm">
+                  <span className="font-black text-slate-900">Total net estimé à prélever :</span>
+                  <span className="font-black text-indigo-900 text-base">{computedNetTotal} DH</span>
+                </div>
               </div>
-            </form>
+
+              <form onSubmit={handleCheckoutConfirm} className="space-y-4 text-xs font-medium">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase font-sans">1. Moyen de règlement principal</label>
+                  <select
+                    value={checkoutForm.payment_method}
+                    onChange={(e) => setCheckoutForm({ ...checkoutForm, payment_method: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 mt-1 p-2.5 text-xs rounded-xl focus:bg-white outline-none font-bold text-slate-800"
+                  >
+                    <option value="cash">🔑 Espèces (Direct Cash)</option>
+                    <option value="stripe">💳 Carte Bancaire (Lecteur / TPE)</option>
+                    <option value="transfer">🏦 Virement Bancaire</option>
+                    <option value="gift_card">🎁 Valider avec un Bon Cadeau</option>
+                  </select>
+                </div>
+
+                {checkoutForm.payment_method === 'gift_card' && (
+                  <div className="p-3.5 bg-indigo-50/50 rounded-xl border border-indigo-150 space-y-2">
+                    <label className="text-[10px] font-bold text-indigo-700 uppercase">Saisir le Code unique du Bon Cadeau</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: GIF-384-HKA8"
+                      value={checkoutForm.gift_card_code}
+                      onChange={(e) => setCheckoutForm({ ...checkoutForm, gift_card_code: e.target.value })}
+                      className="w-full bg-white border border-indigo-200 px-3 py-2 text-xs rounded-lg outline-none font-mono font-bold text-center tracking-widest text-indigo-900 uppercase"
+                    />
+                    <p className="text-[10px] text-indigo-650/80 italic">La valeur du bon cadeau sera débitée du montant total. Si le solde est insuffisant, le reste sera géré.</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">2. Coupon Promo (Optionnel)</label>
+                    <select
+                      value={checkoutForm.promotion_code}
+                      onChange={(e) => setCheckoutForm({ ...checkoutForm, promotion_code: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 mt-1 p-2.5 text-xs rounded-xl focus:bg-white outline-none font-bold text-slate-800"
+                    >
+                      <option value="">Aucune promotion</option>
+                      {promotions.filter(p => p.status === 'active').map(p => (
+                        <option key={p.id} value={p.code}>{p.code} (-{p.discount_type === 'percent' ? `${p.discount_value}%` : `${p.discount_value} DH`})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">3. Vente additionnelle (Produit)</label>
+                    <select
+                      value={checkoutForm.product_id}
+                      onChange={(e) => setCheckoutForm({ ...checkoutForm, product_id: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 mt-1 p-2.5 text-xs rounded-xl focus:bg-white outline-none font-bold text-slate-800"
+                    >
+                      <option value="">Aucun produit retail</option>
+                      {products.filter(p => p.stock > 0).map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.price} DH, stock : {p.stock})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => { setShowCheckout(false); setCheckoutAppt(null); }}
+                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 hover:bg-emerald-700 bg-emerald-600 text-white rounded-xl font-bold shadow-md flex items-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Valider & Clôturer Ticket
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ------------------------------------------------ */}
       {/* TICKET RECEIPT PRINT WINDOW */}
@@ -2860,6 +3439,24 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                 <span className="font-black text-slate-955 shrink-0">{generatedTicket.payment?.amount || generatedTicket.appointment?.total_price} DH</span>
               </div>
             </div>
+
+            {generatedTicket.promotion && (
+              <div className="mb-3 flex justify-between items-center text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100 text-[10px] font-bold font-sans">
+                <span>🏷️ Coupon appliqué : {generatedTicket.promotion.code}</span>
+                <span>
+                  -{generatedTicket.promotion.discount_type === 'percent' 
+                    ? `${generatedTicket.promotion.discount_value}%` 
+                    : `${generatedTicket.promotion.discount_value} DH`}
+                </span>
+              </div>
+            )}
+
+            {generatedTicket.product && (
+              <div className="mb-3 flex justify-between items-center text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-100 text-[10px] font-bold font-sans">
+                <span>🛍️ Produit retail : {generatedTicket.product.name}</span>
+                <span>+{generatedTicket.product.price} DH</span>
+              </div>
+            )}
 
             {/* Receipt Summary block */}
             <div className="py-4 text-xs font-medium text-slate-700 space-y-1.5 bg-slate-50/75 p-3 rounded-xl border border-slate-100">
@@ -3035,6 +3632,358 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
                   className="px-5 py-2 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl font-bold shadow-md font-sans"
                 >
                   Enregistrer & Activer le Bon
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------ */}
+      {/* ADD PRODUCT INVENTORY MODAL */}
+      {/* ------------------------------------------------ */}
+      {showAddProduct && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-150 font-sans">
+            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+              <h3 className="font-extrabold text-slate-900 text-base">🛒 Ajouter un produit à l'inventaire</h3>
+              <button onClick={() => setShowAddProduct(false)} className="text-slate-400 hover:text-slate-955 font-extrabold text-sm">X</button>
+            </div>
+
+            <form onSubmit={handleCreateProduct} className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Nom du produit retail / vente</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Shampooing L'Oréal Absolut Repair 500ml"
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">SKU / Code-barres</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="PROD-FA5A"
+                    value={productForm.sku}
+                    onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Catégorie</label>
+                  <select
+                    value={productForm.category}
+                    onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                  >
+                    <option value="Soins">Soins capillaires</option>
+                    <option value="Maquillage">Maquillage & Onglerie</option>
+                    <option value="Parfums">Parfums</option>
+                    <option value="Visage">Soins Visage & Corps</option>
+                    <option value="Général">Général / Autre</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Prix HT d'achat (Coût)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="50"
+                    value={productForm.cost_price}
+                    onChange={(e) => setProductForm({ ...productForm, cost_price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Prix TTC Public (Vente)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="120"
+                    value={productForm.price}
+                    onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Stock Initial (pcs)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="20"
+                    value={productForm.stock}
+                    onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-black text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Fournisseur</label>
+                  <input
+                    type="text"
+                    placeholder="L'Oréal Pro Maroc"
+                    value={productForm.supplier}
+                    onChange={(e) => setProductForm({ ...productForm, supplier: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddProduct(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold font-sans"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl font-bold shadow-md font-sans"
+                >
+                  Ajouter au catalogue Stock
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------ */}
+      {/* EDIT PRODUCT INVENTORY MODAL */}
+      {/* ------------------------------------------------ */}
+      {editingProduct && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-150 font-sans">
+            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+              <h3 className="font-extrabold text-slate-900 text-base">🛒 Modifier le produit # {editingProduct.sku}</h3>
+              <button onClick={() => setEditingProduct(null)} className="text-slate-400 hover:text-slate-955 font-extrabold text-sm">X</button>
+            </div>
+
+            <form onSubmit={handleUpdateProduct} className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Nom du produit retail / vente</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Shampooing L'Oréal Absolut Repair"
+                  value={editProductForm.name}
+                  onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">SKU / Code-barres</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="PROD-FA5A"
+                    value={editProductForm.sku}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, sku: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Catégorie</label>
+                  <select
+                    value={editProductForm.category}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, category: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                  >
+                    <option value="Soins">Soins capillaires</option>
+                    <option value="Maquillage">Maquillage & Onglerie</option>
+                    <option value="Parfums">Parfums</option>
+                    <option value="Visage">Soins Visage & Corps</option>
+                    <option value="Général">Général / Autre</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Prix HT d'achat (Coût)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="50"
+                    value={editProductForm.cost_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, cost_price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Prix TTC Public (Vente)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="120"
+                    value={editProductForm.price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, price: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Stock Disponible (pcs)</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="10"
+                    value={editProductForm.stock}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, stock: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-black text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Fournisseur</label>
+                  <input
+                    type="text"
+                    placeholder="L'Oréal Pro Maroc"
+                    value={editProductForm.supplier}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, supplier: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold font-sans"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl font-bold shadow-md font-sans"
+                >
+                  Enregistrer les modifications
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------ */}
+      {/* ADD PROMOTION MARKETING MODAL */}
+      {/* ------------------------------------------------ */}
+      {showAddPromotion && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-150 font-sans">
+            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+              <h3 className="font-extrabold text-slate-900 text-base">🏷️ Créer une Campagne de Promotion</h3>
+              <button onClick={() => setShowAddPromotion(false)} className="text-slate-400 hover:text-slate-955 font-extrabold text-sm">X</button>
+            </div>
+
+            <form onSubmit={handleCreatePromotion} className="space-y-4 text-xs font-medium">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Nom de l'offre (Interne)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Soldes d'été 20% sur Services"
+                  value={promotionForm.name}
+                  onChange={(e) => setPromotionForm({ ...promotionForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Code Promotionnel Unique (Coupon)</label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: ETE20"
+                    value={promotionForm.code}
+                    onChange={(e) => setPromotionForm({ ...promotionForm, code: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl focus:bg-white outline-none font-mono font-bold uppercase select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const computedCode = 'PROMO' + Math.floor(10 + Math.random() * 90);
+                      setPromotionForm({ ...promotionForm, code: computedCode });
+                    }}
+                    className="py-2.5 px-3 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 text-xs rounded-xl font-bold transition-all"
+                  >
+                    Auto-Générer
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Type de Réduction</label>
+                  <select
+                    value={promotionForm.discount_type}
+                    onChange={(e) => setPromotionForm({ ...promotionForm, discount_type: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-bold text-slate-800"
+                  >
+                    <option value="percent">Pourcentage (%)</option>
+                    <option value="value">Montant Fixe (DH)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Valeur de la Remise</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="20"
+                    value={promotionForm.discount_value}
+                    onChange={(e) => setPromotionForm({ ...promotionForm, discount_value: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none font-mono font-black text-[#1e293b]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase font-sans">Date de fin / d'expiration (Optionnel)</label>
+                <input
+                  type="date"
+                  value={promotionForm.expires_at}
+                  onChange={(e) => setPromotionForm({ ...promotionForm, expires_at: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs rounded-xl mt-1 focus:bg-white outline-none text-slate-800 font-bold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPromotion(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold font-sans"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-720 text-white rounded-xl font-bold shadow-md font-sans"
+                >
+                  Enregistrer & Activer
                 </button>
               </div>
             </form>

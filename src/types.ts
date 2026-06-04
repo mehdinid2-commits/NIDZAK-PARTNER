@@ -264,6 +264,30 @@ export interface GiftCard {
   expires_at?: string;
 }
 
+export interface Product {
+  id: number;
+  business_id: number;
+  name: string;
+  sku: string;
+  price: number;
+  cost_price: number;
+  stock: number;
+  category: string;
+  supplier?: string;
+}
+
+export interface Promotion {
+  id: number;
+  business_id: number;
+  name: string;
+  code: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  status: 'active' | 'paused' | 'expired';
+  start_date: string;
+  expires_at?: string;
+}
+
 // Authentication DTOs
 export interface AuthResponse {
   user: User;

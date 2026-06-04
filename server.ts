@@ -1066,13 +1066,161 @@ app.post('/api/business/:businessId/gift-cards', checkAuth, verifyTenant, (req, 
   res.json({ success: true, gift_card: newGc });
 });
 
+
+// ----------------------------------------------------
+// MULTI-TENANT PRODUCTS (INVENTORY) endpoints
+// ----------------------------------------------------
+app.get('/api/business/:businessId/products', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const db = loadDatabase();
+  if (!db.products) db.products = [];
+  const list = db.products.filter(p => p.business_id === bId);
+  res.json(list);
+});
+
+app.post('/api/business/:businessId/products', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const { name, sku, price, cost_price, stock, category, supplier } = req.body;
+
+  if (!name || isNaN(Number(price))) {
+    return res.status(400).json({ error: 'Nom et prix valides sont requis.' });
+  }
+
+  const db = loadDatabase();
+  if (!db.products) db.products = [];
+
+  const newProduct = {
+    id: db.products.length + 1,
+    business_id: bId,
+    name,
+    sku: sku || `PROD-${Math.random().toString(36).substring(2,6).toUpperCase()}`,
+    price: Number(price),
+    cost_price: Number(cost_price || 0),
+    stock: Number(stock || 0),
+    category: category || 'Général',
+    supplier: supplier || ''
+  };
+
+  db.products.push(newProduct);
+  saveDatabase();
+  res.json({ success: true, product: newProduct });
+});
+
+app.put('/api/business/:businessId/products/:id', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const id = parseInt(req.params.id);
+  const { name, sku, price, cost_price, stock, category, supplier } = req.body;
+
+  if (!name || isNaN(Number(price))) {
+    return res.status(400).json({ error: 'Nom et prix valides sont requis.' });
+  }
+
+  const db = loadDatabase();
+  if (!db.products) db.products = [];
+
+  const prod = db.products.find(p => p.id === id && p.business_id === bId);
+  if (!prod) {
+    return res.status(404).json({ error: 'Produit introuvable.' });
+  }
+
+  prod.name = name;
+  prod.sku = sku || prod.sku;
+  prod.price = Number(price);
+  prod.cost_price = Number(cost_price || 0);
+  prod.stock = Number(stock || 0);
+  prod.category = category || 'Général';
+  prod.supplier = supplier || '';
+
+  saveDatabase();
+  res.json({ success: true, product: prod });
+});
+
+app.delete('/api/business/:businessId/products/:id', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const id = parseInt(req.params.id);
+  const db = loadDatabase();
+  if (!db.products) db.products = [];
+  
+  const initialLength = db.products.length;
+  db.products = db.products.filter(p => !(p.id === id && p.business_id === bId));
+  
+  if (db.products.length === initialLength) {
+    return res.status(404).json({ error: 'Produit introuvable.' });
+  }
+  
+  saveDatabase();
+  res.json({ success: true });
+});
+
+// ----------------------------------------------------
+// MULTI-TENANT PROMOTIONS (MARKETING) endpoints
+// ----------------------------------------------------
+app.get('/api/business/:businessId/promotions', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const db = loadDatabase();
+  if (!db.promotions) db.promotions = [];
+  const list = db.promotions.filter(p => p.business_id === bId);
+  res.json(list);
+});
+
+app.post('/api/business/:businessId/promotions', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const { name, code, discount_type, discount_value, status, expires_at } = req.body;
+
+  if (!name || !code || !discount_type || isNaN(Number(discount_value))) {
+    return res.status(400).json({ error: 'Nom, code, type et valeur de réduction requis.' });
+  }
+
+  const db = loadDatabase();
+  if (!db.promotions) db.promotions = [];
+
+  const existing = db.promotions.find(p => p.business_id === bId && p.code.toUpperCase() === code.toUpperCase());
+  if (existing) {
+    return res.status(400).json({ error: 'Une promotion avec ce code existe déjà.' });
+  }
+
+  const newPromo = {
+    id: db.promotions.length + 1,
+    business_id: bId,
+    name,
+    code: code.toUpperCase(),
+    discount_type,
+    discount_value: Number(discount_value),
+    status: status || 'active',
+    start_date: new Date().toISOString().slice(0, 10),
+    expires_at: expires_at || undefined
+  };
+
+  db.promotions.push(newPromo);
+  saveDatabase();
+  res.json({ success: true, promotion: newPromo });
+});
+
+app.delete('/api/business/:businessId/promotions/:id', checkAuth, verifyTenant, (req, res) => {
+  const bId = parseInt(req.params.businessId);
+  const id = parseInt(req.params.id);
+  const db = loadDatabase();
+  if (!db.promotions) db.promotions = [];
+  
+  const initialLength = db.promotions.length;
+  db.promotions = db.promotions.filter(p => !(p.id === id && p.business_id === bId));
+  
+  if (db.promotions.length === initialLength) {
+    return res.status(404).json({ error: 'Promotion introuvable.' });
+  }
+  
+  saveDatabase();
+  res.json({ success: true });
+});
+
+
 // ----------------------------------------------------
 // APPOINTMENT CHECKOUT ENDPOINT WITH PAYMENT METHODS AND GIFT CARD DEDUCTION
 // ----------------------------------------------------
 app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verifyTenant, (req, res) => {
   const bId = parseInt(req.params.businessId);
   const apptId = parseInt(req.params.id);
-  const { payment_method, gift_card_code } = req.body;
+  const { payment_method, gift_card_code, product_id, promotion_code } = req.body;
 
   if (!payment_method) {
     return res.status(400).json({ error: 'Moyen de paiement requis.' });
@@ -1084,6 +1232,37 @@ app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verif
 
   let usedGiftCard: any = null;
   let chargeAmount = appt.total_price;
+  let appliedPromo: any = null;
+  let soldProduct: any = null;
+  const serviceObj = db.services.find(s => s.id === appt.service_id);
+  let transactionDetail = serviceObj ? serviceObj.name : 'Prestation de service';
+
+  // Apply Promotion Code if exists
+  if (promotion_code) {
+    if (!db.promotions) db.promotions = [];
+    const promo = db.promotions.find(p => p.business_id === bId && p.code.toUpperCase() === promotion_code.toUpperCase() && p.status === 'active');
+    if (promo) {
+      appliedPromo = promo;
+      if (promo.discount_type === 'percent') {
+        chargeAmount = Number((chargeAmount * (1 - promo.discount_value / 100)).toFixed(2));
+      } else {
+        chargeAmount = Math.max(0, chargeAmount - promo.discount_value);
+      }
+      transactionDetail += ` (Promo ${promo.code})`;
+    }
+  }
+
+  // Handle retail product upselling if selected
+  if (product_id) {
+    if (!db.products) db.products = [];
+    const prod = db.products.find(p => p.id === parseInt(product_id) && p.business_id === bId);
+    if (prod) {
+      soldProduct = prod;
+      chargeAmount += prod.price;
+      prod.stock = Math.max(0, prod.stock - 1); // deduct inventory stock
+      transactionDetail += ` + ${prod.name}`;
+    }
+  }
 
   if (payment_method === 'gift_card') {
     if (!gift_card_code) {
@@ -1100,7 +1279,7 @@ app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verif
 
     if (gc.remaining_amount < chargeAmount) {
       return res.status(400).json({ 
-        error: `Solde insuffisant sur ce bon cadeau (${gc.remaining_amount} DH restants pour un service de ${chargeAmount} DH).` 
+        error: `Solde insuffisant sur ce bon cadeau (${gc.remaining_amount} DH restants pour un total net de ${chargeAmount} DH).` 
       });
     }
 
@@ -1113,9 +1292,11 @@ app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verif
 
   // Update appointment status to completed (3)
   appt.status_id = 3;
+  appt.total_price = chargeAmount; // Store final calculated price
   appt.updated_at = new Date().toISOString();
 
   // Create payment transaction
+  if (!db.payments) db.payments = [];
   const payId = db.payments.length + 1;
   const newPayment = {
     id: payId,
@@ -1126,6 +1307,7 @@ app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verif
     status: 'completed' as const,
     gateway: payment_method as any,
     transaction_id: payment_method === 'gift_card' ? `voucher_${gift_card_code.toUpperCase()}` : `pay_${Date.now()}`,
+    detail: transactionDetail,
     created_at: new Date().toISOString()
   };
 
@@ -1136,7 +1318,9 @@ app.post('/api/business/:businessId/appointments/:id/checkout', checkAuth, verif
     success: true, 
     appointment: appt, 
     payment: newPayment,
-    gift_card: usedGiftCard
+    gift_card: usedGiftCard,
+    product: soldProduct,
+    promotion: appliedPromo
   });
 });
 

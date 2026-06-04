@@ -31,7 +31,9 @@ import {
   WorkingHour,
   Holiday,
   UserRoleName,
-  GiftCard
+  GiftCard,
+  Product,
+  Promotion
 } from '../types';
 
 interface DatabaseState {
@@ -58,6 +60,8 @@ interface DatabaseState {
   working_hours: WorkingHour[];
   holidays: Holiday[];
   gift_cards: GiftCard[];
+  products: Product[];
+  promotions: Promotion[];
   system_settings: { [key: string]: string };
 }
 
@@ -91,6 +95,9 @@ export function loadDatabase(): DatabaseState {
     if (fs.existsSync(DB_FILE_PATH)) {
       const content = fs.readFileSync(DB_FILE_PATH, 'utf-8');
       dbState = JSON.parse(content);
+      if (!dbState.products) dbState.products = [];
+      if (!dbState.promotions) dbState.promotions = [];
+      if (!dbState.gift_cards) dbState.gift_cards = [];
       return dbState;
     }
   } catch (e) {
@@ -342,6 +349,15 @@ export function loadDatabase(): DatabaseState {
     gift_cards: [
       { id: 1, business_id: 1, code: "BON-500", initial_amount: 500, remaining_amount: 500, client_name: "Sofia Drissi", status: "active", created_at: "2026-06-01T12:00:00Z" },
       { id: 2, business_id: 1, code: "BON-100", initial_amount: 100, remaining_amount: 30, client_name: "Nabil El Fassi", status: "active", created_at: "2026-06-02T15:00:00Z" }
+    ],
+    products: [
+      { id: 1, business_id: 1, name: "Huile d'Argan Premium bio", sku: "ARGAN-100", price: 150, cost_price: 60, stock: 24, category: "Soins cheveux" },
+      { id: 2, business_id: 1, name: "Shampooing Purifiant à l'argile", sku: "SHAMP-ARG", price: 90, cost_price: 35, stock: 15, category: "Gamme bain" },
+      { id: 3, business_id: 1, name: "Sérum Anti-âge Hydratation Extrême", sku: "SERUM-HYDR", price: 290, cost_price: 110, stock: 8, category: "Soins Visage" }
+    ],
+    promotions: [
+      { id: 1, business_id: 1, name: "Remise d'Été", code: "SUMMER15", discount_type: "percent", discount_value: 15, status: "active", start_date: "2026-06-01" },
+      { id: 2, business_id: 1, name: "Chèque d'accueil nouveau client", code: "WELCOME50", discount_type: "fixed", discount_value: 50, status: "active", start_date: "2026-06-01" }
     ]
   };
 
