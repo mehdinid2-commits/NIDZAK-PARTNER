@@ -6,18 +6,79 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Shared global validation/auth primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     // System tables metadata collection for secure full-system backend synchronization
     match /system_tables/{tableId} {
-      // Allow read/write access ONLY if logged in specifically as the backend sync service identity
       allow read, write: if request.auth != null && request.auth.token.email == 'system-database-sync@nidzak.com';
     }
 
-    // Standard client-side users path (matches your existing rules)
+    // Fortress core match block: Isolates and secures all business/SaaS items by the authenticated owner's UID
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      match /{allPaths=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Profile and settings root documents
+      allow read, write: if isOwner(userId);
+
+      match /profile {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /appointments/{appointmentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /customers/{customerId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /services/{serviceId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /employees/{employeeId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /payments/{paymentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /invoices/{invoiceId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /settings/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /analytics/{recordId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /products/{productId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /promotions/{promotionId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /giftcards/{giftcardId} {
+        allow read, write: if isOwner(userId);
       }
     }
   }

@@ -1,27 +1,58 @@
 {
   "entities": {
-    "SystemTable": {
-      "title": "SystemTable",
-      "description": "Serialized copy of system-level business application database tables",
+    "User": {
+      "title": "User Profile",
+      "description": "User business metadata mapping plans and stats",
       "type": "object",
       "properties": {
-        "state": {
-          "type": "object",
-          "description": "The full application in-memory state mapped by table keys"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp when this database state document was last updated"
-        }
+        "uid": { "type": "string" },
+        "businessId": { "type": "number" },
+        "name": { "type": "string" },
+        "migrated_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["state", "updatedAt"]
+      "required": ["uid", "businessId", "name"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Customer service reservation details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "business_id": { "type": "number" },
+        "client_id": { "type": "number" },
+        "staff_id": { "type": "number" },
+        "service_id": { "type": "number" },
+        "date": { "type": "string" },
+        "start_time": { "type": "string" },
+        "status_id": { "type": "number" }
+      },
+      "required": ["id", "client_id", "staff_id", "service_id", "date"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer contact and notes registry document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["id", "name"]
     }
   },
   "firestore": {
-    "/system_tables/{tableId}": {
-      "schema": "SystemTable",
-      "description": "Sync tables containing the structured SaaS relational databases"
+    "/users/{userId}/profile": {
+      "schema": "User",
+      "description": "The custom tenant account overview state"
+    },
+    "/users/{userId}/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "All customer bookings for this tenant owner"
+    },
+    "/users/{userId}/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "All clients associated with this business owner"
     }
   }
 }

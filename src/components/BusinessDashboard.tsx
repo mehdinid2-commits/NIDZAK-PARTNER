@@ -1,4 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { auth, db } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import {
+  saveToFirestore,
+  deleteFromFirestore,
+  subscribeToCollection,
+  migrateLocalDataToFirestoreIfEmpty,
+  generateId
+} from '../lib/firestoreService';
 import {
   Calendar as CalendarIcon,
   Users,
@@ -144,45 +154,29 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
 
   const handleUpdateService = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingService) return;
+    if (!editingService || !auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/services/${editingService.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(editServiceForm)
-      });
-      if (res.ok) {
-        setEditingService(null);
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur lors de la modification.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/services`, String(editingService.id), {
+        ...editingService,
+        name: editServiceForm.name,
+        description: editServiceForm.description,
+        price: Number(editServiceForm.price),
+        duration: Number(editServiceForm.duration),
+        category_id: Number(editServiceForm.category_id || 3)
+      }, true);
+      setEditingService(null);
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la mise à jour.');
     }
   };
 
-  const handleDeleteService = async (id: number) => {
+  const handleDeleteService = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment supprimer cette prestation ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/services/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur lors de la suppression.');
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/services`, String(id));
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la suppression.');
     }
   };
 
@@ -202,45 +196,28 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
 
   const handleUpdateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStaff) return;
+    if (!editingStaff || !auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/staff/${editingStaff.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(editStaffForm)
-      });
-      if (res.ok) {
-        setEditingStaff(null);
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur de modification collaborateur.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/employees`, String(editingStaff.id), {
+        ...editingStaff,
+        name: editStaffForm.name,
+        email: editStaffForm.email,
+        phone: editStaffForm.phone,
+        bio: editStaffForm.bio
+      }, true);
+      setEditingStaff(null);
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur de modification collaborateur.');
     }
   };
 
-  const handleDeleteStaff = async (id: number) => {
+  const handleDeleteStaff = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment supprimer ce collaborateur ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/staff/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur lors de la suppression.');
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/employees`, String(id));
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la suppression.');
     }
   };
 
@@ -260,140 +237,205 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
 
   const handleUpdateClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingClient) return;
+    if (!editingClient || !auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/clients/${editingClient.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(editClientForm)
-      });
-      if (res.ok) {
-        setEditingClient(null);
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur de modification client.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/customers`, String(editingClient.id), {
+        ...editingClient,
+        name: editClientForm.name,
+        email: editClientForm.email,
+        phone: editClientForm.phone,
+        notes: editClientForm.notes
+      }, true);
+      setEditingClient(null);
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur de modification client.');
     }
   };
 
-  const handleDeleteClient = async (id: number) => {
+  const handleDeleteClient = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment supprimer cette fiche client ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/clients/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchTenantDataset();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur lors de la suppression.');
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/customers`, String(id));
     } catch {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la suppression.');
     }
   };
 
   // Notifications
   const [alerts, setAlerts] = useState<any[]>([]);
 
+  // Unified Firebase Sync and Firestore loader engine
   const fetchTenantDataset = async () => {
-    setLoading(true);
-    try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-
-      // Standard multi-tenant isolated api routes fetch
-      const [resStats, resAppts, resServices, resStaff, resClients, resBranches, resBilling, resGiftCards, resProducts, resPromotions] = await Promise.all([
-        fetch(`/api/business/${businessId}/stats`, { headers }),
-        fetch(`/api/business/${businessId}/appointments`, { headers }),
-        fetch(`/api/business/${businessId}/services`, { headers }),
-        fetch(`/api/business/${businessId}/staff`, { headers }),
-        fetch(`/api/business/${businessId}/clients`, { headers }),
-        fetch(`/api/business/${businessId}/branches`, { headers }),
-        fetch(`/api/business/${businessId}/billing`, { headers }),
-        fetch(`/api/business/${businessId}/gift-cards`, { headers }),
-        fetch(`/api/business/${businessId}/products`, { headers }),
-        fetch(`/api/business/${businessId}/promotions`, { headers }),
-      ]);
-
-      if (resStats.ok) {
-        const statsData = await resStats.json();
-        setStats(statsData);
-        setSub(statsData.sub);
-        setPlan(statsData.plan);
-        if (statsData.business) {
-          setSettingsForm({
-            name: statsData.business.name || '',
-            phone: statsData.business.phone || '',
-            email: statsData.business.email || '',
-            address: statsData.business.address || '',
-            description: statsData.business.description || '',
-            logo: statsData.business.logo || '',
-            currency: (statsData.setting && statsData.setting.currency) || 'MAD',
-            timezone: (statsData.setting && statsData.setting.timezone) || 'Africa/Casablanca'
-          });
-        }
-      }
-
-      if (resAppts.ok) setAppointments(await resAppts.json());
-      if (resServices.ok) setServices(await resServices.json());
-      if (resStaff.ok) setStaff(await resStaff.json());
-      if (resClients.ok) setClients(await resClients.json());
-      if (resBranches.ok) setBranches(await resBranches.json());
-      if (resGiftCards.ok) setGiftCards(await resGiftCards.json());
-      if (resProducts.ok) setProducts(await resProducts.json());
-      if (resPromotions.ok) setPromotions(await resPromotions.json());
-      
-      if (resBilling.ok) {
-        const billingData = await resBilling.json();
-        setInvoices(billingData.invoices);
-        setPayments(billingData.payments);
-      }
-
-    } catch (e) {
-      console.error('Error fetching tenant dataset:', e);
-      setErrorMsg('Données multilocataires inaccessibles.');
-    } finally {
-      setLoading(false);
-    }
+    // Left as a micro-operation for compatibility across legacy components if any
+    console.log('[FIREBASE-COMPAT] Invoking background fetch sync refresh.');
   };
+
+  useEffect(() => {
+    let unsubscribers: (() => void)[] = [];
+
+    const setupFirestoreSync = async (user: any) => {
+      setLoading(true);
+      try {
+        console.log('[FIREBASE] Managing Firestore synchronization for user:', user.uid);
+        
+        // 1. Validate / Migrate any legacy local storage data to Cloud Firestore immediately
+        await migrateLocalDataToFirestoreIfEmpty(user.uid, businessId, token, ownerName);
+
+        // 2. Setup real-time listeners (snapshots) for all business components
+        // Appointments
+        const unsubAppts = subscribeToCollection<any>(user.uid, 'appointments', (data) => {
+          setAppointments(data);
+        });
+        unsubscribers.push(unsubAppts);
+
+        // Customers (mapped to clients state!)
+        const unsubClients = subscribeToCollection<any>(user.uid, 'customers', (data) => {
+          setClients(data);
+        });
+        unsubscribers.push(unsubClients);
+
+        // Services
+        const unsubServices = subscribeToCollection<any>(user.uid, 'services', (data) => {
+          setServices(data);
+        });
+        unsubscribers.push(unsubServices);
+
+        // Employees (mapped to staff state!)
+        const unsubStaff = subscribeToCollection<any>(user.uid, 'employees', (data) => {
+          setStaff(data);
+        });
+        unsubscribers.push(unsubStaff);
+
+        // Products
+        const unsubProducts = subscribeToCollection<any>(user.uid, 'products', (data) => {
+          setProducts(data);
+        });
+        unsubscribers.push(unsubProducts);
+
+        // Promotions
+        const unsubPromotions = subscribeToCollection<any>(user.uid, 'promotions', (data) => {
+          setPromotions(data);
+        });
+        unsubscribers.push(unsubPromotions);
+
+        // Gift Cards
+        const unsubGiftCards = subscribeToCollection<any>(user.uid, 'giftcards', (data) => {
+          setGiftCards(data);
+        });
+        unsubscribers.push(unsubGiftCards);
+
+        // Invoices
+        const unsubInvoices = subscribeToCollection<any>(user.uid, 'invoices', (data) => {
+          setInvoices(data);
+        });
+        unsubscribers.push(unsubInvoices);
+
+        // Payments
+        const unsubPayments = subscribeToCollection<any>(user.uid, 'payments', (data) => {
+          setPayments(data);
+        });
+        unsubscribers.push(unsubPayments);
+
+        // Settings / App Configuration
+        const unsubSettings = onSnapshot(doc(db, `users/${user.uid}/settings`, 'app'), (snap) => {
+          if (snap.exists()) {
+            const d = snap.data();
+            setSettingsForm((prev) => ({
+              ...prev,
+              currency: d.currency || 'MAD',
+              timezone: d.timezone || 'Africa/Casablanca'
+            }));
+          }
+        });
+        unsubscribers.push(unsubSettings);
+
+        // Profile State (Abonnements, Plans, Business info)
+        const unsubProfile = onSnapshot(doc(db, `users/${user.uid}`, 'profile'), (snap) => {
+          if (snap.exists()) {
+            const d = snap.data();
+            if (d.business) {
+              setSettingsForm((prev) => ({
+                ...prev,
+                name: d.business.name || '',
+                phone: d.business.phone || '',
+                email: d.business.email || '',
+                address: d.business.address || '',
+                description: d.business.description || '',
+                logo: d.business.logo || ''
+              }));
+            }
+            setSub(d.sub || null);
+            setPlan(d.plan || null);
+            setStats({
+              business: d.business || null,
+              sub: d.sub || null,
+              plan: d.plan || null,
+              totalAppointments: d.statsSummary?.totalAppointments || 0,
+              revenue: d.statsSummary?.revenue || 0,
+              clientsCount: d.statsSummary?.clientsCount || 0,
+              staffCount: d.statsSummary?.staffCount || 0,
+              servicesCount: d.statsSummary?.servicesCount || 0
+            });
+          }
+        });
+        unsubscribers.push(unsubProfile);
+
+      } catch (err) {
+        console.error('[FIREBASE] Error initializing listeners:', err);
+        setErrorMsg('Échec de la synchronisation Firestore.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setupFirestoreSync(firebaseUser);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [businessId, token]);
 
   const handleUpdateSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     try {
-      const res = await fetch(`/api/business/${businessId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(settingsForm)
-      });
-      if (res.ok) {
+      if (auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        // Save to settings/app and profile merge docs in Firestore immediately
+        await setDoc(doc(db, `users/${uid}/settings`, 'app'), {
+          currency: settingsForm.currency,
+          timezone: settingsForm.timezone,
+          language: 'fr',
+          ownerName: ownerName
+        });
+        await setDoc(doc(db, `users/${uid}`, 'profile'), {
+          name: settingsForm.name,
+          business: {
+            id: businessId,
+            name: settingsForm.name,
+            phone: settingsForm.phone,
+            email: settingsForm.email,
+            address: settingsForm.address,
+            description: settingsForm.description,
+            logo: settingsForm.logo
+          }
+        }, { merge: true });
         alert('Paramètres d\'établissement sauvegardés avec succès !');
-        fetchTenantDataset();
       } else {
-        const err = await res.json();
-        alert(err.error || 'Erreur lors de l\'enregistrement des paramètres.');
+        alert('Utilisateur non connecté.');
       }
-    } catch {
-      alert('Erreur réseau.');
+    } catch (err) {
+      alert('Erreur: ' + String(err));
     }
   };
 
-  useEffect(() => {
-    fetchTenantDataset();
-  }, [businessId, token]);
-
-  // Handle plan upgrade trigger
   const handleUpgradePlan = async (planId: number) => {
     try {
       const response = await fetch(`/api/business/${businessId}/billing/upgrade`, {
@@ -405,8 +447,15 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
         body: JSON.stringify({ plan_id: planId })
       });
       if (response.ok) {
+        const data = await response.json();
         alert('Votre abonnement a été surclassé à l\'aide de la simulation Stripe ! Vos limites sont ajustées.');
-        fetchTenantDataset();
+        if (auth.currentUser) {
+          const profileDoc = doc(db, `users/${auth.currentUser.uid}`, 'profile');
+          await setDoc(profileDoc, {
+            sub: data.sub || null,
+            plan: data.plan || null
+          }, { merge: true });
+        }
       } else {
         alert('Échec de la transaction d\'abonnement.');
       }
@@ -425,43 +474,60 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       return;
     }
 
-    try {
-      const response = await fetch(`/api/business/${businessId}/appointments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(apptForm)
-      });
+    if (!auth.currentUser) {
+      alert('Non connecté.');
+      return;
+    }
 
-      if (response.ok) {
-        setShowAddAppt(false);
-        setApptForm({ client_id: '', staff_id: '', service_id: '', date: '', start_time: '10:00', notes: '', status_id: '1' });
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Erreur lors de la réservation.');
-      }
-    } catch (e) {
-      alert('Erreur réseau.');
+    try {
+      const newId = generateId();
+      const srv = services.find((s) => String(s.id) === String(apptForm.service_id));
+      const price = srv ? srv.price : 0;
+
+      const apptPayload = {
+        id: newId,
+        business_id: businessId,
+        branch_id: 1,
+        client_id: isNaN(Number(apptForm.client_id)) ? apptForm.client_id : Number(apptForm.client_id),
+        staff_id: isNaN(Number(apptForm.staff_id)) ? apptForm.staff_id : Number(apptForm.staff_id),
+        service_id: isNaN(Number(apptForm.service_id)) ? apptForm.service_id : Number(apptForm.service_id),
+        date: apptForm.date,
+        start_time: apptForm.start_time,
+        end_time: apptForm.start_time,
+        total_price: price,
+        status_id: Number(apptForm.status_id || 1),
+        notes: apptForm.notes || '',
+        created_at: new Date().toISOString()
+      };
+
+      await saveToFirestore(`users/${auth.currentUser.uid}/appointments`, String(newId), apptPayload);
+
+      // Increment stats count
+      const profileRef = doc(db, `users/${auth.currentUser.uid}`, 'profile');
+      await setDoc(profileRef, {
+        statsSummary: {
+          totalAppointments: (stats?.totalAppointments || 0) + 1
+        }
+      }, { merge: true });
+
+      setShowAddAppt(false);
+      setApptForm({ client_id: '', staff_id: '', service_id: '', date: '', start_time: '10:00', notes: '', status_id: '1' });
+    } catch (e: any) {
+      alert('Erreur lors de la réservation : ' + e.message);
     }
   };
 
   // Change Appointment Status Handler
-  const handleUpdateApptStatus = async (apptId: number, statusId: number) => {
+  const handleUpdateApptStatus = async (apptId: string | number, statusId: number) => {
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/appointments/${apptId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status_id: statusId })
-      });
-      if (response.ok) {
+      const appt = appointments.find((a) => String(a.id) === String(apptId));
+      if (appt) {
+        await saveToFirestore(`users/${auth.currentUser.uid}/appointments`, String(apptId), {
+          ...appt,
+          status_id: Number(statusId)
+        }, true);
         setSelectedAppt(null);
-        fetchTenantDataset();
       }
     } catch (e) {
       alert('Erreur de changement de statut.');
@@ -471,70 +537,64 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
   // Gift Voucher Creation Handler
   const handleCreateGiftCard = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/gift-cards`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(giftCardForm)
-      });
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        code: giftCardForm.code || `BON-${Math.floor(100 + Math.random() * 900)}-GIFT`,
+        initial_amount: Number(giftCardForm.initial_amount || 200),
+        remaining_amount: Number(giftCardForm.initial_amount || 200),
+        client_name: giftCardForm.client_name,
+        client_phone: giftCardForm.client_phone || '',
+        status: 'active',
+        created_at: new Date().toISOString(),
+        expires_at: giftCardForm.expires_at || ''
+      };
 
-      if (response.ok) {
-        setShowAddGiftCard(false);
-        setGiftCardForm({ code: '', initial_amount: '200', client_name: '', client_phone: '', expires_at: '' });
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Erreur lors de la création du bon cadeau.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/giftcards`, String(newId), payload);
+      setShowAddGiftCard(false);
+      setGiftCardForm({ code: '', initial_amount: '200', client_name: '', client_phone: '', expires_at: '' });
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la création du bon cadeau.');
     }
   };
 
   // Product Creation Handler
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/products`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(productForm)
-      });
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        name: productForm.name,
+        sku: productForm.sku || `PROD-${Math.floor(1000 + Math.random() * 9000)}`,
+        price: Number(productForm.price || 0),
+        cost_price: Number(productForm.cost_price || 0),
+        stock: Number(productForm.stock || 10),
+        category: productForm.category,
+        supplier: productForm.supplier || ''
+      };
 
-      if (response.ok) {
-        setShowAddProduct(false);
-        setProductForm({ name: '', sku: '', price: '', cost_price: '', stock: '10', category: '', supplier: '' });
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Erreur lors de la création du produit.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/products`, String(newId), payload);
+      setShowAddProduct(false);
+      setProductForm({ name: '', sku: '', price: '', cost_price: '', stock: '10', category: '', supplier: '' });
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la création du produit.');
     }
   };
 
   // Product Deletion Handler
-  const handleDeleteProduct = async (id: number) => {
+  const handleDeleteProduct = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment supprimer ce produit de l\'inventaire ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/products/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        fetchTenantDataset();
-      } else {
-        alert('Erreur lors de la suppression.');
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/products`, String(id));
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la suppression.');
     }
   };
 
@@ -553,125 +613,177 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
 
   const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProduct) return;
+    if (!editingProduct || !auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/products/${editingProduct.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(editProductForm)
-      });
-
-      if (response.ok) {
-        setEditingProduct(null);
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Erreur lors de la mise à jour du produit.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/products`, String(editingProduct.id), {
+        ...editingProduct,
+        name: editProductForm.name,
+        sku: editProductForm.sku,
+        price: Number(editProductForm.price),
+        cost_price: Number(editProductForm.cost_price),
+        stock: Number(editProductForm.stock),
+        category: editProductForm.category,
+        supplier: editProductForm.supplier
+      }, true);
+      setEditingProduct(null);
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la mise à jour du produit.');
     }
   };
 
   // Promotion Creation Handler
   const handleCreatePromotion = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/promotions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(promotionForm)
-      });
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        name: promotionForm.name,
+        code: promotionForm.code,
+        discount_type: promotionForm.discount_type,
+        discount_value: Number(promotionForm.discount_value),
+        status: promotionForm.status || 'active',
+        start_date: new Date().toISOString(),
+        expires_at: promotionForm.expires_at || ''
+      };
 
-      if (response.ok) {
-        setShowAddPromotion(false);
-        setPromotionForm({ name: '', code: '', discount_type: 'percent', discount_value: '10', status: 'active', expires_at: '' });
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Erreur d\'enregistrement de la promotion.');
-      }
+      await saveToFirestore(`users/${auth.currentUser.uid}/promotions`, String(newId), payload);
+      setShowAddPromotion(false);
+      setPromotionForm({ name: '', code: '', discount_type: 'percent', discount_value: '10', status: 'active', expires_at: '' });
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur d\'enregistrement de la promotion.');
     }
   };
 
   // Promotion Deletion Handler
-  const handleDeletePromotion = async (id: number) => {
+  const handleDeletePromotion = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment désactiver/supprimer cette offre promotionnelle ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/promotions/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        fetchTenantDataset();
-      } else {
-        alert('Erreur lors de la suppression.');
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/promotions`, String(id));
     } catch (err) {
-      alert('Erreur réseau.');
+      alert('Erreur lors de la suppression.');
     }
   };
 
   // Checkout Payment Confirmation
   const handleCheckoutConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkoutAppt) return;
+    if (!checkoutAppt || !auth.currentUser) return;
     try {
-      const response = await fetch(`/api/business/${businessId}/appointments/${checkoutAppt.id}/checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(checkoutForm)
+      const uid = auth.currentUser.uid;
+      const apptId = checkoutAppt.id;
+      const appt = appointments.find((a) => String(a.id) === String(apptId));
+      if (!appt) {
+        alert('Rendez-vous introuvable.');
+        return;
+      }
+
+      const srv = services.find((s) => s.id === appt.service_id);
+      const originalPrice = srv ? srv.price : appt.total_price || 0;
+      let finalPrice = originalPrice;
+
+      // Apply promo
+      if (checkoutForm.promotion_code) {
+        const promo = promotions.find((p) => p.code?.toUpperCase() === checkoutForm.promotion_code.toUpperCase());
+        if (promo) {
+          if (promo.discount_type === 'percent') {
+            finalPrice = Math.max(0, finalPrice - (finalPrice * Number(promo.discount_value) / 100));
+          } else {
+            finalPrice = Math.max(0, finalPrice - Number(promo.discount_value));
+          }
+        }
+      }
+
+      // Gift card redeem
+      let giftCardUsed = null;
+      if (checkoutForm.gift_card_code) {
+        const card = giftCards.find((g) => g.code?.toUpperCase() === checkoutForm.gift_card_code.toUpperCase());
+        if (card) {
+          const deduct = Math.min(card.remaining_amount, finalPrice);
+          finalPrice -= deduct;
+          const updatedCard = {
+            ...card,
+            remaining_amount: card.remaining_amount - deduct,
+            status: (card.remaining_amount - deduct) <= 0 ? 'used' : 'active'
+          };
+          giftCardUsed = updatedCard;
+          await saveToFirestore(`users/${uid}/giftcards`, String(card.id), updatedCard, true);
+        }
+      }
+
+      // Update appt
+      const updatedAppt = {
+        ...appt,
+        status_id: 3, // completed
+        total_price: finalPrice
+      };
+      await saveToFirestore(`users/${uid}/appointments`, String(apptId), updatedAppt, true);
+
+      // Create Payment
+      const paymentId = generateId();
+      const paymentPayload = {
+        id: paymentId,
+        business_id: businessId,
+        appointment_id: apptId,
+        subscription_id: null,
+        amount: finalPrice,
+        status: 'completed',
+        gateway: checkoutForm.payment_method || 'cash',
+        created_at: new Date().toISOString()
+      };
+      await saveToFirestore(`users/${uid}/payments`, String(paymentId), paymentPayload);
+
+      // Create Invoice
+      const invoiceId = generateId();
+      const invoicePayload = {
+        id: invoiceId,
+        business_id: businessId,
+        subscription_id: null,
+        invoice_number: `FACT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        amount: finalPrice,
+        status: 'paid',
+        issue_date: new Date().toISOString().split('T')[0],
+        due_date: new Date().toISOString().split('T')[0],
+        created_at: new Date().toISOString()
+      };
+      await saveToFirestore(`users/${uid}/invoices`, String(invoiceId), invoicePayload);
+
+      // Save updated total revenue stats
+      const profileRef = doc(db, `users/${uid}`, 'profile');
+      await setDoc(profileRef, {
+        statsSummary: {
+          revenue: (stats?.revenue || 0) + finalPrice
+        }
+      }, { merge: true });
+
+      setGeneratedTicket({
+        appointment: updatedAppt,
+        payment: paymentPayload,
+        gift_card: giftCardUsed,
+        client: clients.find((c) => c.id === appt.client_id),
+        service: srv,
+        staff: staff.find((s) => s.id === appt.staff_id)
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Compile receipt values
-        setGeneratedTicket({
-          appointment: data.appointment,
-          payment: data.payment,
-          gift_card: data.gift_card,
-          client: clients.find(c => c.id === data.appointment.client_id),
-          service: services.find(s => s.id === data.appointment.service_id),
-          staff: staff.find(s => s.id === data.appointment.staff_id)
-        });
-        
-        setShowCheckout(false);
-        setCheckoutAppt(null);
-        setShowTicketModal(true);
-        setSelectedAppt(null);
-        fetchTenantDataset();
-      } else {
-        const err = await response.json();
-        alert(err.error || "Erreur lors de la validation de l'encaissement.");
-      }
+      setShowCheckout(false);
+      setCheckoutAppt(null);
+      setShowTicketModal(true);
+      setSelectedAppt(null);
     } catch (err) {
-      alert('Erreur serveur lors de la validation.');
+      alert("Erreur lors de la validation de l'encaissement.");
     }
   };
 
   // Delete Appointment
-  const handleDeleteAppt = async (id: number) => {
+  const handleDeleteAppt = async (id: string | number) => {
     if (!confirm('Voulez-vous vraiment annuler et supprimer ce rendez-vous ?')) return;
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/appointments/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setSelectedAppt(null);
-        fetchTenantDataset();
-      }
+      await deleteFromFirestore(`users/${auth.currentUser.uid}/appointments`, String(id));
+      setSelectedAppt(null);
     } catch (e) {
       alert('Erreur.');
     }
@@ -680,20 +792,31 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
   // Quick Service CRUD Add
   const handleCreateService = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/services`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(serviceForm)
-      });
-      if (res.ok) {
-        setShowAddService(false);
-        setServiceForm({ name: '', description: '', price: '', duration: '45', category_id: '3' });
-        fetchTenantDataset();
-      }
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        name: serviceForm.name,
+        description: serviceForm.description || '',
+        price: Number(serviceForm.price || 0),
+        duration: Number(serviceForm.duration || 45),
+        category_id: Number(serviceForm.category_id || 3),
+        created_at: new Date().toISOString()
+      };
+
+      await saveToFirestore(`users/${auth.currentUser.uid}/services`, String(newId), payload);
+      
+      const profileRef = doc(db, `users/${auth.currentUser.uid}`, 'profile');
+      await setDoc(profileRef, {
+        statsSummary: {
+          servicesCount: (stats?.servicesCount || 0) + 1
+        }
+      }, { merge: true });
+
+      setShowAddService(false);
+      setServiceForm({ name: '', description: '', price: '', duration: '45', category_id: '3' });
     } catch (err) {
       alert('Erreur de création service.');
     }
@@ -709,20 +832,34 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
       return;
     }
 
+    if (!auth.currentUser) return;
+
     try {
-      const res = await fetch(`/api/business/${businessId}/staff`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(staffForm)
-      });
-      if (res.ok) {
-        setShowAddStaff(false);
-        setStaffForm({ name: '', email: '', phone: '', bio: '' });
-        fetchTenantDataset();
-      }
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        branch_id: 1,
+        user_id: null,
+        name: staffForm.name,
+        email: staffForm.email,
+        phone: staffForm.phone || '',
+        photo: '',
+        bio: staffForm.bio || '',
+        created_at: new Date().toISOString()
+      };
+
+      await saveToFirestore(`users/${auth.currentUser.uid}/employees`, String(newId), payload);
+      
+      const profileRef = doc(db, `users/${auth.currentUser.uid}`, 'profile');
+      await setDoc(profileRef, {
+        statsSummary: {
+          staffCount: (stats?.staffCount || 0) + 1
+        }
+      }, { merge: true });
+
+      setShowAddStaff(false);
+      setStaffForm({ name: '', email: '', phone: '', bio: '' });
     } catch (e) {
       alert('Erreur staff.');
     }
@@ -731,20 +868,30 @@ export default function BusinessDashboard({ businessId, token, onLogout, ownerNa
   // Quick Client Profile Add
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth.currentUser) return;
     try {
-      const res = await fetch(`/api/business/${businessId}/clients`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(clientForm)
-      });
-      if (res.ok) {
-        setShowAddClient(false);
-        setClientForm({ name: '', email: '', phone: '', notes: '' });
-        fetchTenantDataset();
-      }
+      const newId = generateId();
+      const payload = {
+        id: newId,
+        business_id: businessId,
+        name: clientForm.name,
+        email: clientForm.email || '',
+        phone: clientForm.phone || '',
+        notes: clientForm.notes || '',
+        created_at: new Date().toISOString()
+      };
+
+      await saveToFirestore(`users/${auth.currentUser.uid}/customers`, String(newId), payload);
+
+      const profileRef = doc(db, `users/${auth.currentUser.uid}`, 'profile');
+      await setDoc(profileRef, {
+        statsSummary: {
+          clientsCount: (stats?.clientsCount || 0) + 1
+        }
+      }, { merge: true });
+
+      setShowAddClient(false);
+      setClientForm({ name: '', email: '', phone: '', notes: '' });
     } catch (e) {
       alert('Erreur.');
     }

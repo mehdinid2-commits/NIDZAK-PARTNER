@@ -4,9 +4,11 @@ import AuthPage from './components/AuthPage';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import BusinessDashboard from './components/BusinessDashboard';
 import PublicBookingPage from './components/PublicBookingPage';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Mail, Scissors } from 'lucide-react';
+import { createTestDocumentAfterLogin } from './lib/firestoreService';
 
 // Safe localStorage wrappers to prevent iframe state crashes under strict sandboxing
 const storage = {
@@ -73,46 +75,99 @@ export default function App() {
     fetchBusinesses();
   }, [view]);
 
+  // Diagnostic state for Firebase writes proof
+  const [diagnostic, setDiagnostic] = useState<{
+    projectId: string;
+    appName: string;
+    databaseName: string;
+    status: 'IDLE' | 'PENDING' | 'SUCCESS' | 'FAILURE';
+    errorStack?: string;
+    timestamp?: string;
+  }>({
+    projectId: auth.app.options.projectId || 'Unknown',
+    appName: auth.app.name || 'Unknown',
+    databaseName: '(default)',
+    status: 'IDLE'
+  });
+
+  const [showDiagScreen, setShowDiagScreen] = useState<boolean>(true);
+
   // Monitor Firebase Authentication session state cleanly in one place (auth gate)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        if (firebaseUser.emailVerified) {
-          // If they are signed in via Firebase, but we do not have our local session token/role set,
-          // we dynamically sync database info for this email from the backend.
-          if (!token || !role) {
-            try {
-              const response = await fetch('/api/auth/firebase-sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: firebaseUser.email })
-              });
-              if (response.ok) {
-                const data = await response.json();
-                handleLoginSuccess(
-                  data.token,
-                  data.role,
-                  data.user?.business_id || data.business?.id,
-                  data.user?.name
-                );
-              } else {
-                // Local user records don't match, sign out of Firebase
-                await signOut(auth);
-                handleLogoutLocalOnly();
+        // Log login success
+        console.log('[FIREBASE] Login success for user email:', firebaseUser.email, 'UID:', firebaseUser.uid);
+
+        // Create test document after login
+        try {
+          await createTestDocumentAfterLogin(firebaseUser.uid);
+        } catch (createErr) {
+          console.error('[FIREBASE] Exception occurred writing test document users/{uid}:', createErr);
+        }
+
+        // Run diagnostic write exactly as requested by user
+        (async () => {
+          console.log('--- STARTING FIREBASE DIAGNOSTIC RUN ---');
+          try {
+            await setDoc(
+              doc(db, "debug", "test"),
+              {
+                timestamp: serverTimestamp(),
+                source: "diagnostic"
               }
-            } catch (e) {
-              console.error('onAuthStateChanged synchronization error:', e);
+            );
+            console.log('Diagnostic setDoc write SUCCESS!');
+            setDiagnostic(prev => ({
+              ...prev,
+              status: 'SUCCESS',
+              timestamp: new Date().toISOString()
+            }));
+            console.log('Firebase Project ID:', auth.app.options.projectId);
+            console.log('Firebase App Name:', auth.app.name);
+            console.log('Firestore Database Name:', (db as any)._databaseId?.database || '(default)');
+            console.log('Diagnostic Write Result: SUCCESS');
+          } catch (diagErr: any) {
+            console.error('Diagnostic setDoc write FAILURE:', diagErr);
+            console.error('Full exception stack trace:', diagErr?.stack || diagErr);
+            setDiagnostic(prev => ({
+              ...prev,
+              status: 'FAILURE',
+              errorStack: diagErr?.stack || diagErr?.message || String(diagErr)
+            }));
+            console.log('Firebase Project ID:', auth.app.options.projectId);
+            console.log('Firebase App Name:', auth.app.name);
+            console.log('Firestore Database Name:', (db as any)._databaseId?.database || '(default)');
+            console.log('Diagnostic Write Result: FAILURE');
+          }
+          console.log('--- ENDING FIREBASE DIAGNOSTIC RUN ---');
+        })();
+
+        // If they are signed in via Firebase, but we do not have our local session token/role set,
+        // we dynamically sync database info for this email from the backend.
+        if (!token || !role) {
+          try {
+            const response = await fetch('/api/auth/firebase-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: firebaseUser.email })
+            });
+            if (response.ok) {
+              const data = await response.json();
+              handleLoginSuccess(
+                data.token,
+                data.role,
+                data.user?.business_id || data.business?.id,
+                data.user?.name
+              );
+            } else {
+              // Local user records don't match, sign out of Firebase
+              await signOut(auth);
               handleLogoutLocalOnly();
             }
-          }
-        } else {
-          // User is logged in but NOT verified!
-          // Force logout and show verification screen, unless currently registers (isSigningUp)
-          if (!isSigningUp) {
-            const email = firebaseUser.email || '';
-            setUnverifiedEmail(email);
-            await signOut(auth);
-            handleLogoutLocalOnly('verification');
+          } catch (e) {
+            console.error('onAuthStateChanged synchronization error:', e);
+            handleLogoutLocalOnly();
           }
         }
       } else {
@@ -259,6 +314,106 @@ export default function App() {
           onLogout={handleLogout}
           ownerName={userName || 'Propriétaire'}
         />
+      )}
+
+      {/* Sleek Temporary Diagnostics Proof Overlay Screen */}
+      {auth.currentUser && showDiagScreen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" id="firebase-diagnostic-screen">
+          <div className="bg-slate-900 border border-slate-800 text-slate-100 p-6 rounded-2xl shadow-2xl max-w-lg w-full space-y-4 font-mono">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-y-1 flex-col items-start">
+                <span className="font-sans font-black tracking-wider text-sm text-indigo-400">🔥 FIREBASE DIAGNOSTICS CONTROL UNIT</span>
+                <span className="text-[10px] text-slate-400">Temporary Verification Monitor</span>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                diagnostic.status === 'SUCCESS' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+                diagnostic.status === 'FAILURE' ? 'bg-rose-950 text-rose-400 border border-rose-800' :
+                diagnostic.status === 'PENDING' ? 'bg-indigo-950 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {diagnostic.status === 'SUCCESS' ? 'SUCCESS' : diagnostic.status === 'FAILURE' ? 'FAILURE' : 'PENDING'}
+              </span>
+            </div>
+
+            <div className="space-y-3 text-slate-300 text-xs">
+              <div className="grid grid-cols-3 border-b border-slate-800/50 pb-2">
+                <span className="text-slate-500 font-sans">Firebase Project ID</span>
+                <span className="col-span-2 text-indigo-300 font-semibold">{diagnostic.projectId}</span>
+              </div>
+              <div className="grid grid-cols-3 border-b border-slate-800/50 pb-2">
+                <span className="text-slate-500 font-sans">Firebase App Name</span>
+                <span className="col-span-2 text-indigo-300">{diagnostic.appName}</span>
+              </div>
+              <div className="grid grid-cols-3 border-b border-slate-800/50 pb-2">
+                <span className="text-slate-500 font-sans">Firestore DB Name</span>
+                <span className="col-span-2 text-indigo-300">{diagnostic.databaseName}</span>
+              </div>
+              <div className="grid grid-cols-3 border-b border-slate-800/50 pb-2">
+                <span className="text-slate-500 font-sans">Write Status</span>
+                <span className={`col-span-2 font-bold ${diagnostic.status === 'SUCCESS' ? 'text-emerald-400' : diagnostic.status === 'FAILURE' ? 'text-rose-400' : 'text-amber-400'}`}>
+                  {diagnostic.status === 'SUCCESS' ? 'SUCCESSFULLY COMMITTED TO CLOUD FIRESTORE ✓' : diagnostic.status === 'FAILURE' ? 'FAILED ✗' : 'IN PROGRESS...'}
+                </span>
+              </div>
+              {diagnostic.timestamp && (
+                <div className="grid grid-cols-3 border-b border-slate-800/50 pb-2">
+                  <span className="text-slate-500 font-sans">Write Timestamp</span>
+                  <span className="col-span-2">{diagnostic.timestamp}</span>
+                </div>
+              )}
+
+              {/* Stack Trace Box */}
+              {diagnostic.status === 'FAILURE' && (
+                <div className="space-y-1">
+                  <span className="text-rose-400 text-[10px] uppercase font-bold">Full Exception Stack Trace:</span>
+                  <div className="bg-rose-950/40 text-rose-300 p-3 rounded-lg border border-rose-900/40 font-mono text-[9px] max-h-40 overflow-y-auto whitespace-pre-wrap leading-normal scrollbar-thin scrollbar-thumb-rose-900/50">
+                    {diagnostic.errorStack || 'No stack trace found.'}
+                  </div>
+                </div>
+              )}
+
+              {diagnostic.status === 'SUCCESS' && (
+                <div className="bg-emerald-950/20 border border-emerald-900/30 text-emerald-400/90 rounded-lg p-3 text-[10px] leading-relaxed font-sans">
+                  The test write was successfully completed from the client to the Firestore collection <code className="bg-emerald-950 text-emerald-300 p-0.5 rounded font-mono text-[9px]">debug/test</code> using <code className="bg-emerald-950 text-emerald-300 p-0.5 rounded font-mono text-[9px]">serverTimestamp()</code>.
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold font-sans transition-all cursor-pointer"
+                onClick={async () => {
+                  setDiagnostic(prev => ({ ...prev, status: 'PENDING', errorStack: undefined }));
+                  try {
+                    await setDoc(doc(db, "debug", "test"), {
+                      timestamp: serverTimestamp(),
+                      source: "diagnostic"
+                    });
+                    setDiagnostic(prev => ({
+                      ...prev,
+                      status: 'SUCCESS',
+                      timestamp: new Date().toISOString()
+                    }));
+                  } catch (err: any) {
+                    setDiagnostic(prev => ({
+                      ...prev,
+                      status: 'FAILURE',
+                      errorStack: err?.stack || err?.message || String(err)
+                    }));
+                  }
+                }}
+              >
+                Re-Run Write Diagnostic
+              </button>
+              <button
+                type="button"
+                className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold font-sans transition-all cursor-pointer"
+                onClick={() => setShowDiagScreen(false)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

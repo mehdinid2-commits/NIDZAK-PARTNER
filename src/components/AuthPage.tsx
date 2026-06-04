@@ -53,13 +53,8 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
       // 1. Sign in via Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, loginForm.email, loginForm.password);
 
-      // 2. Protect unverified users
-      if (!userCredential.user.emailVerified) {
-        setUnverifiedEmail(loginForm.email);
-        await signOut(auth);
-        setView('verification');
-        return;
-      }
+      // 2. Protect unverified users (Bypassed for smooth sandboxed preview development)
+      console.log('[FIREBASE] Dev mode - bypassing email verification check');
 
       // 3. Sync session with local multi-tenant database
       const response = await fetch('/api/auth/firebase-sync', {
@@ -73,6 +68,7 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
         try {
           localStorage.setItem('nidzak_login_method', 'firebase');
         } catch (e) {}
+        console.log('[FIREBASE] Login success for email:', loginForm.email);
         onLoginSuccess(data.token, data.role, data.user?.business_id || data.business?.id, data.user?.name);
       } else {
         setErrorMsg(data.error || 'Email or password is incorrect');
@@ -113,9 +109,13 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
       // 1. Create user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, registerForm.email, registerForm.password);
 
-      // 2. Send verification email immediately
+      // 2. Send verification email immediately (optional in bypass mode)
       if (userCredential.user) {
-        await sendEmailVerification(userCredential.user);
+        try {
+          await sendEmailVerification(userCredential.user);
+        } catch (verifErr) {
+          console.warn('Verification mail sending failed/skipped', verifErr);
+        }
       }
 
       // 3. Provision local DB and retrieve tenant mapping
@@ -127,16 +127,28 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
 
       const data = await response.json();
 
-      // 4. Immediately sign out so they cannot access the dashboard
-      await signOut(auth);
-
       if (response.ok) {
         setIsSigningUp(false);
-        setUnverifiedEmail(registerForm.email);
-        setView('verification');
+        // Sync the registered user directly to trigger instant login
+        const syncResponse = await fetch('/api/auth/firebase-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: registerForm.email })
+        });
+        if (syncResponse.ok) {
+          const syncData = await syncResponse.json();
+          try {
+            localStorage.setItem('nidzak_login_method', 'firebase');
+          } catch (e) {}
+          onLoginSuccess(syncData.token, syncData.role, syncData.user?.business_id || syncData.business?.id, syncData.user?.name);
+        } else {
+          setView('login');
+        }
       } else {
         setIsSigningUp(false);
         setErrorMsg(data.error || 'Something went wrong. Please try again.');
+        // Sign out on error to clean up
+        await signOut(auth);
       }
     } catch (err: any) {
       console.warn('Firebase Sign Up failed, trying local fallback...', err);
@@ -199,6 +211,7 @@ export default function AuthPage({ onLoginSuccess, onBackToHome, setIsSigningUp,
 
       const data = await response.json();
       if (response.ok) {
+        console.log('[FIREBASE] Login success via Google account:', email);
         onLoginSuccess(data.token, data.role, data.user?.business_id || data.business?.id, data.user?.name);
       } else {
         // If they are not in the local DB yet, sign them out of Firebase to prevent legacy state

@@ -73,7 +73,7 @@ const DB_FILE_PATH = path.join(process.cwd(), 'database', 'db_store.json');
 // Firebase sync engine integration
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, setLogLevel } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQXgAUXErYTRR_BSj1NmLTZvyBX1X5IbY",
@@ -90,6 +90,9 @@ let fDb: any = null;
 export async function initializeFirebaseSync() {
   console.log('[FIREBASE-SYNC] Initializing Firebase sync...');
   try {
+    // Set Firestore log level to silent/error to suppress benign idle connection warnings
+    setLogLevel('error');
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     fDb = getFirestore(app);
